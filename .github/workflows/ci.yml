@@ -1,0 +1,38 @@
+name: Vision-AI Production CI
+
+on:
+  push:
+    branches:
+      - main
+      - Vision-AI-Prod
+  pull_request:
+    branches:
+      - main
+      - Vision-AI-Prod
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Adversarial recognizer audit
+        run: npm run audit:recognizer
+
+      - name: Production build
+        run: npm run build
