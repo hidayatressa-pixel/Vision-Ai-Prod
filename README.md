@@ -2,7 +2,7 @@
 
 Industrial vision inspection station for **Reflector Assy HL GJRA**.
 
-The application is designed for a fixed camera station where each workpiece is located, aligned against a configured master, inspected at eight screw positions, and classified deterministically as **OK**, **NG**, or **ERROR**.
+The application is designed for a fixed camera station where each workpiece is located, aligned against a configured master, inspected at eight screw positions, and classified deterministically as **OK**, **NG**, or **INVALID**.
 
 ## Core workflow
 
@@ -40,7 +40,7 @@ create table if not exists public.inspection_history (
   master_id text not null,
   master_revision_id text not null,
   master_revision_code text not null,
-  judgement text not null check (judgement in ('OK', 'NG', 'ERROR')),
+  judgement text not null check (judgement in ('OK', 'NG', 'INVALID')),
   expected_count integer not null,
   detected_count integer not null,
   defects jsonb not null default '[]'::jsonb,
