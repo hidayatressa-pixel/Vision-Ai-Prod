@@ -6,7 +6,7 @@ The application is designed for a fixed camera station where each workpiece is l
 
 ## Core workflow
 
-1. **Master Setup** — Engineering uploads one approved master image, configures four alignment anchors, eight screw inspection ROIs, tolerances, and exactly six close-up reference images.
+1. **Master Setup** — Engineering uploads one approved master image, configures four alignment anchors, eight screw inspection ROIs, tolerances, and exactly eight close-up reference images.
 2. **Part Detection** — The camera monitors the configured detection zone and waits for the workpiece to settle.
 3. **Alignment** — Fiducial anchors determine translation, rotation, scale, and residual error before inspection.
 4. **Inspection** — Each of the eight required screw locations is checked for presence, confidence, and position tolerance. Unexpected screw-like objects are also screened.
@@ -20,7 +20,7 @@ This repository is the **production/on-premise Vision-AI variant**. It does not 
 
 The inspection decision runs locally in the browser/device using OpenCV 5-assisted vision processing, the configured master/ROI rules, and the PLC adapter. Cloud history is optional and currently uses Supabase when configured.
 
-The AWS/OpenCV5 hackathon implementation is maintained separately on the `hackathon/aws-opencv5-verification` line of development and is intentionally not part of this production runtime.
+The AWS/OpenCV 5 hackathon implementation is maintained separately in the `Vision-AI-AWS` repository and is intentionally not part of this production runtime.
 
 ## Cloud history setup
 
@@ -143,7 +143,7 @@ Before line use:
 
 - Configure the Supabase project and `.env.local` values.
 - Upload the approved master image.
-- Upload all six approved close-up reference images.
+- Upload all eight approved close-up reference images.
 - Verify all four alignment anchors against the fixture.
 - Verify all eight screw ROIs and their tolerances.
 - Calibrate the empty background under production lighting.
