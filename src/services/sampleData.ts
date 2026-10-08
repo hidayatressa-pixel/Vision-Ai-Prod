@@ -178,6 +178,7 @@ export async function initSeedDataIfEmpty() {
         masterId: SEED_PRODUCT_A.id,
         revisionCode: 'REV-01',
         expectedObjectCount: 8,
+        masterImageUrl: resolvedMasterImageUrl,
         // Always trust the uploaded image's native dimensions. This migrates
         // old 800x600 masters without touching normalized ROI/anchor values.
         masterWidth: nativeDimensions.width || sourceRevision.masterWidth || 0,
