@@ -1,9 +1,10 @@
 /**
  * Persistence service for Vision-AI.
  *
- * Master configuration remains local to the station for now. Inspection history
- * is cloud-first and is stored in Supabase/PostgREST so every device sees the
- * same history. No service-role key is ever used in the browser.
+ * Master configuration is persisted in station-local IndexedDB. Inspection
+ * history is cloud-first with a durable local outbox: records that cannot be
+ * written to Supabase remain locally queued until a later sync succeeds.
+ * No service-role key is ever used in the browser.
  */
 
 import { InspectionRecord, InspectionStats } from '../types/inspection';
@@ -12,8 +13,14 @@ import { MasterProduct } from '../types/master';
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 const HISTORY_TABLE = 'inspection_history';
+const MASTER_DB_NAME = 'vision-ai-station';
+const MASTER_DB_VERSION = 1;
+const MASTER_STORE = 'masters';
+const LOCAL_HISTORY_KEY = 'vision-ai-inspection-history';
 
 class DatabaseService {
+  private masterDbPromise: Promise<IDBDatabase> | null = null;
+
   private getCloudConfig() {
     if (!SUPABASE_URL || !SUPABASE_KEY) {
       throw new Error(
@@ -44,57 +51,105 @@ class DatabaseService {
     return response.json() as Promise<T>;
   }
 
-  // --- Master Operations ---
-  // Master configuration is intentionally kept station-local until the
-  // approved source-controlled master asset package is bundled.
-  private masterCache = new Map<string, MasterProduct>();
-  private readonly localHistoryKey = 'vision-ai-inspection-history';
+  // --- Persistent station-local master configuration ---
+  private openMasterDb(): Promise<IDBDatabase> {
+    if (typeof indexedDB === 'undefined') {
+      return Promise.reject(new Error('This browser does not support IndexedDB; master settings cannot be persisted.'));
+    }
+    if (!this.masterDbPromise) {
+      this.masterDbPromise = new Promise((resolve, reject) => {
+        const request = indexedDB.open(MASTER_DB_NAME, MASTER_DB_VERSION);
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains(MASTER_STORE)) {
+            database.createObjectStore(MASTER_STORE, { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => {
+          this.masterDbPromise = null;
+          reject(request.error || new Error('Unable to open local master database.'));
+        };
+        request.onblocked = () => {
+          this.masterDbPromise = null;
+          reject(new Error('Master database upgrade is blocked by another open station tab. Close other tabs and retry.'));
+        };
+      });
+    }
+    return this.masterDbPromise;
+  }
 
   public async getAllMasters(): Promise<MasterProduct[]> {
-    return Array.from(this.masterCache.values());
+    const database = await this.openMasterDb();
+    return new Promise((resolve, reject) => {
+      const request = database.transaction(MASTER_STORE, 'readonly').objectStore(MASTER_STORE).getAll();
+      request.onsuccess = () => resolve((request.result as MasterProduct[]).sort((a, b) => a.productCode.localeCompare(b.productCode)));
+      request.onerror = () => reject(request.error || new Error('Unable to read saved master settings.'));
+    });
   }
 
   public async getMasterById(id: string): Promise<MasterProduct | null> {
-    return this.masterCache.get(id) || null;
+    const database = await this.openMasterDb();
+    return new Promise((resolve, reject) => {
+      const request = database.transaction(MASTER_STORE, 'readonly').objectStore(MASTER_STORE).get(id);
+      request.onsuccess = () => resolve((request.result as MasterProduct | undefined) || null);
+      request.onerror = () => reject(request.error || new Error('Unable to read master setting.'));
+    });
   }
 
   public async deleteMaster(id: string): Promise<void> {
-    this.masterCache.delete(id);
+    const database = await this.openMasterDb();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(MASTER_STORE, 'readwrite');
+      transaction.objectStore(MASTER_STORE).delete(id);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Unable to delete master setting.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Master deletion was aborted.'));
+    });
   }
 
   public async saveMaster(master: MasterProduct): Promise<void> {
-    this.masterCache.set(master.id, master);
+    const database = await this.openMasterDb();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(MASTER_STORE, 'readwrite');
+      transaction.objectStore(MASTER_STORE).put(master);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Unable to save master setting.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Master save was aborted.'));
+    });
   }
 
-  // --- Cloud Inspection History ---
+  // --- Durable local outbox for cloud inspection history ---
   private getLocalHistory(): InspectionRecord[] {
     try {
-      const raw = localStorage.getItem(this.localHistoryKey);
+      const raw = localStorage.getItem(LOCAL_HISTORY_KEY);
       if (!raw) return [];
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed as InspectionRecord[] : [];
     } catch {
       return [];
     }
   }
 
-  private saveLocalHistory(record: InspectionRecord): void {
+  private writeLocalHistory(records: InspectionRecord[]): void {
+    // Keep the newest records first. Unsynced records are never silently
+    // discarded in favor of older synced history when the limit is reached.
+    const ordered = [...records].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     try {
-      const existing = this.getLocalHistory().filter((item) => item.id !== record.id);
-      localStorage.setItem(this.localHistoryKey, JSON.stringify([record, ...existing].slice(0, 5000)));
+      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(ordered.slice(0, 5000)));
     } catch (error) {
-      console.warn('[DatabaseService] Local history save failed:', error);
+      console.error('[DatabaseService] Local history/outbox write failed:', error);
+      throw new Error('Local inspection history could not be saved. Check browser storage capacity before continuing.');
     }
   }
 
-  private removeLocalHistoryRecord(id: string): void {
-    try {
-      localStorage.setItem(this.localHistoryKey, JSON.stringify(this.getLocalHistory().filter((item) => item.id !== id)));
-    } catch {}
+  private saveLocalHistory(record: InspectionRecord): void {
+    const existing = this.getLocalHistory().filter((item) => item.id !== record.id);
+    this.writeLocalHistory([{ ...record, syncedToCloud: false }, ...existing]);
   }
 
-  private removeAllLocalHistory(): void {
-    try { localStorage.removeItem(this.localHistoryKey); } catch {}
+  private removeLocalHistoryRecord(id: string): void {
+    this.writeLocalHistory(this.getLocalHistory().filter((item) => item.id !== id));
   }
 
   private mergeHistory(cloud: InspectionRecord[], local: InspectionRecord[]): InspectionRecord[] {
@@ -171,23 +226,22 @@ class DatabaseService {
       });
       this.removeLocalHistoryRecord(record.id);
     } catch (error) {
-      this.saveLocalHistory({ ...record, syncedToCloud: false });
-      console.warn('[DatabaseService] Cloud history unavailable; saved locally:', error);
+      this.saveLocalHistory(record);
+      console.warn('[DatabaseService] Cloud history queued locally for retry:', error);
     }
   }
 
   public async getRecentInspections(limit = 500): Promise<InspectionRecord[]> {
+    const safeLimit = Math.max(1, Math.min(limit, 5000));
     const local = this.getLocalHistory();
-    if (!SUPABASE_URL || !SUPABASE_KEY) {
-      return local.slice(0, Math.max(1, Math.min(limit, 5000)));
-    }
+    if (!SUPABASE_URL || !SUPABASE_KEY) return local.slice(0, safeLimit);
 
     try {
-      const rows = await this.request<any[]>(`?select=*&order=timestamp.desc&limit=${Math.max(1, Math.min(limit, 5000))}`);
-      return this.mergeHistory(rows.map((row) => this.fromCloudRecord(row)), local).slice(0, Math.max(1, Math.min(limit, 5000)));
+      const rows = await this.request<any[]>(`?select=*&order=timestamp.desc&limit=${safeLimit}`);
+      return this.mergeHistory(rows.map((row) => this.fromCloudRecord(row)), local).slice(0, safeLimit);
     } catch (error) {
       console.warn('[DatabaseService] Cloud history read failed; using local history:', error);
-      return local.slice(0, Math.max(1, Math.min(limit, 5000)));
+      return local.slice(0, safeLimit);
     }
   }
 
@@ -244,7 +298,7 @@ class DatabaseService {
   }
 
   public async clearInspectionHistory(): Promise<void> {
-    this.removeAllLocalHistory();
+    this.writeLocalHistory([]);
     if (!SUPABASE_URL || !SUPABASE_KEY) return;
     await this.request('?id=not.is.null', {
       method: 'DELETE',
@@ -253,11 +307,30 @@ class DatabaseService {
   }
 
   public async getPendingSyncCount(): Promise<number> {
-    return 0;
+    return this.getLocalHistory().filter((record) => !record.syncedToCloud).length;
   }
 
   public async flushSyncQueue(): Promise<{ synced: number }> {
-    return { synced: 0 };
+    if (!SUPABASE_URL || !SUPABASE_KEY) return { synced: 0 };
+    const pending = this.getLocalHistory().filter((record) => !record.syncedToCloud);
+    let synced = 0;
+
+    for (const record of pending) {
+      try {
+        await this.request('', {
+          method: 'POST',
+          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify(this.toCloudRecord(record)),
+        });
+        this.removeLocalHistoryRecord(record.id);
+        synced++;
+      } catch (error) {
+        // Stop at the first failed write; remaining records stay queued.
+        console.warn('[DatabaseService] Outbox sync paused; records remain queued:', error);
+        break;
+      }
+    }
+    return { synced };
   }
 }
 
