@@ -648,7 +648,7 @@ export function useInspectionPipeline({
       }
     }, [captureFrame, fps]);
 
-  // Main real-time pipeline tick loop (~20 FPS)
+  // Main real-time pipeline tick loop. Detection cadence follows the configured processing FPS.
   useEffect(() => {
     if (!sessionActive) return;
     if (cameraState === 'error' || cameraState === 'permission_denied') return;
@@ -786,7 +786,7 @@ export function useInspectionPipeline({
       requestAnimationFrame(() => {
         executeInspection(frameData, partDetectDuration, stabDuration);
       });
-    }, 50); // 20 ticks per second
+    }, Math.max(50, Math.round(1000 / Math.max(1, processingFps))));
 
     return () => clearInterval(interval);
   }, [activeRevision, cameraState, captureFrame, executeInspection, state, processingFps, sessionActive]);
