@@ -504,6 +504,10 @@ export function useInspectionPipeline({
 
       const inspectionId = `INSP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const plcSequenceNumber = plcService.getHandshakeState().lastSequenceNumber;
+      // ARCHITECTURE RULE:
+      // The rule-engine final judgement is the machine decision source.
+      // PLC receives this result directly; DB persistence is intentionally
+      // asynchronous and must never be read back to decide the machine action.
       const plcHandshakeResult = await plcService.sendResultAndHandshake({
         sequenceNumber: plcSequenceNumber,
         inspectionId,
