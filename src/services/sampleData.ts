@@ -1,5 +1,12 @@
 import { InspectionROI, MasterProduct, ReferenceImage } from '../types/master';
 
+const MASTER_ASSET_BASE = `${import.meta.env.BASE_URL}master/reflector-assy-hl-gjra`;
+const BUILT_IN_MASTER_IMAGE = `${MASTER_ASSET_BASE}/Master.jpeg`;
+const BUILT_IN_REFERENCE_IMAGES = Array.from({ length: 8 }, (_, index) => {
+  const fileName = index === 0 ? 'Ref%201.jpeg' : `ref%20${index + 1}.jpeg`;
+  return `${MASTER_ASSET_BASE}/${fileName}`;
+});
+
 // Actual reflector layout from the production photo:
 // 4 screws across the upper brackets, 2 screws in the center, 2 screws below.
 // The Master Setup editor remains the final calibration authority; these are
@@ -30,8 +37,8 @@ const referenceImages: ReferenceImage[] = Array.from({ length: 8 }, (_, index) =
   id: `ref-${index + 1}`,
   label: `Reference ${index + 1}`,
   roiId: eightScrewROIs[index].id,
-  imageUrl: '',
-  description: 'Upload the approved golden reference image during Master Setup.',
+  imageUrl: BUILT_IN_REFERENCE_IMAGES[index],
+  description: 'Built-in Production golden reference.'
 }));
 
 export const SEED_PRODUCT_A: MasterProduct = {
@@ -54,7 +61,7 @@ export const SEED_PRODUCT_A: MasterProduct = {
     // Do not use a synthetic 800x600 calibration canvas.
     masterWidth: 0,
     masterHeight: 0,
-    masterImageUrl: '',
+    masterImageUrl: BUILT_IN_MASTER_IMAGE,
     detectionZone: { x: 0.15, y: 0.15, width: 0.7, height: 0.7 },
     anchors: anchors.map((anchor) => ({ ...anchor })),
     inspectionROIs: eightScrewROIs.map((roi) => ({ ...roi })),
@@ -144,9 +151,20 @@ export async function initSeedDataIfEmpty() {
   if (!sourceRevision) {
     await dbService.saveMaster(SEED_PRODUCT_A);
   } else {
-    const nativeDimensions = sourceRevision.masterImageUrl
-    ? await getImageDimensions(sourceRevision.masterImageUrl)
-    : { width: 0, height: 0 };
+    const mergedReferenceImages = Array.from({ length: 8 }, (_, index) => {
+      const existingReference = sourceRevision.referenceImages?.[index];
+      const builtInReference = SEED_PRODUCT_A.revisions[0].referenceImages[index];
+      return {
+        ...(builtInReference || {}),
+        ...(existingReference || {}),
+        imageUrl: existingReference?.imageUrl?.trim() || builtInReference.imageUrl,
+      };
+    });
+
+    const resolvedMasterImageUrl =
+      sourceRevision.masterImageUrl?.trim() || BUILT_IN_MASTER_IMAGE;
+
+    const nativeDimensions = await getImageDimensions(resolvedMasterImageUrl);
 
   const canonical: MasterProduct = {
       ...source,
@@ -172,10 +190,7 @@ export async function initSeedDataIfEmpty() {
           sourceRevision.anchors?.length === 4
             ? sourceRevision.anchors
             : SEED_PRODUCT_A.revisions[0].anchors,
-        referenceImages:
-          sourceRevision.referenceImages?.length === 8
-            ? sourceRevision.referenceImages
-            : SEED_PRODUCT_A.revisions[0].referenceImages,
+        referenceImages: mergedReferenceImages,
       }],
       updatedAt: new Date().toISOString(),
     };
