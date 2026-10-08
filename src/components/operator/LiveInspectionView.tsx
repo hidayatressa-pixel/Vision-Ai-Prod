@@ -329,6 +329,30 @@ export const LiveInspectionView: React.FC<LiveInspectionViewProps> = ({
             )}
           </div>
 
+          {!sessionActive && onStartSession && (
+            <button
+              type="button"
+              onClick={onStartSession}
+              disabled={!activeMaster || !activeRevision || (cameraState !== 'streaming' && cameraState !== 'virtual_mode')}
+              className="pointer-events-auto px-2.5 py-1.5 rounded-lg bg-emerald-500 border border-emerald-400 text-[10px] font-mono font-black text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
+              title="Capture empty-stand baseline and start continuous inspection"
+            >
+              START SESSION
+            </button>
+          )}
+
+          {sessionActive && onEndSession && (
+            <button
+              type="button"
+              onClick={onEndSession}
+              disabled={state !== 'WAITING_FOR_PART'}
+              className="pointer-events-auto px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-amber-500/30 text-[10px] font-mono text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+              title={state === 'WAITING_FOR_PART' ? 'End inspection session' : 'Remove the inspected part before ending the session'}
+            >
+              END SESSION
+            </button>
+          )}
+
           {role === 'ENGINEER' && (
             <div className="flex items-center gap-2 pointer-events-auto">
               <button
