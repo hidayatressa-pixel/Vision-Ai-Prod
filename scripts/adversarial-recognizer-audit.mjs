@@ -22,8 +22,7 @@ if (!weightBlock) {
   process.exit(1);
 }
 for (const [key, value] of Object.entries(WEIGHTS)) {
-  const escapedKey = key.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\const reference = {');
-  const match = weightBlock[1].match(new RegExp('\\\\b' + escapedKey + ':\\\\s*([0-9.]+)'));
+  const match = weightBlock[1].match(new RegExp(key + ':\\s*([0-9.]+)'));
   if (!match || Number(match[1]) !== value) {
     console.error(`Recognizer weight mismatch for ${key}: audit=${value}, production=${match ? match[1] : 'missing'}`);
     process.exit(1);
