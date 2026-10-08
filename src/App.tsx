@@ -33,6 +33,8 @@ export default function App() {
   }
   const [activeTab, setActiveTab] = useState<ActiveTab>('INSPECTION');
   const [role] = useState<UserRole>('OPERATOR');
+  const [sessionActive, setSessionActive] = useState(false);
+  const configurationLocked = sessionActive;
   const [isMuted, setIsMuted] = useState(false);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [masters, setMasters] = useState<MasterProduct[]>([]);
@@ -48,7 +50,8 @@ export default function App() {
 
   const cameraOptions = React.useMemo(() => ({ preferredFacingMode: 'environment' as const, preferredResolution: { width: 800, height: 600 } }), []);
   const camera = useCamera({ ...cameraOptions, sourceMode: cameraSourceMode });
-  const pipeline = useInspectionPipeline({ activeMaster, activeRevision, captureFrame: camera.captureFrame, cameraState: camera.cameraState, fps: camera.fps });
+  const [processingFps, setProcessingFps] = useState(5);
+  const pipeline = useInspectionPipeline({ activeMaster, activeRevision, captureFrame: camera.captureFrame, cameraState: camera.cameraState, fps: camera.fps, processingFps, sessionActive });
 
   useEffect(() => {
     if (cameraSourceMode !== 'PHONE_REMOTE') {
@@ -107,7 +110,7 @@ export default function App() {
     // Do not allow master/revision changes during an active inspection cycle.
     // This keeps the selected configuration aligned with the physical part
     // and prevents an operator action from bypassing the inspection latch.
-    if (pipeline.state !== 'WAITING_FOR_PART') {
+    if (sessionActive || pipeline.state !== 'WAITING_FOR_PART') {
       return;
     }
 
@@ -118,10 +121,12 @@ export default function App() {
   };
 
   const handleOpenSetupModal = (master: MasterProduct, revision: MasterRevision) => {
+    if (configurationLocked) return;
     setSetupMaster(master); setSetupRevision(revision); setIsSetupModalOpen(true);
   };
 
   const handleCreateNewMaster = async () => {
+    if (configurationLocked) return;
     const newIdx = masters.length + 1;
     const now = new Date().toISOString();
     const productId = `prd-${newIdx}-${Date.now()}`;
@@ -138,6 +143,18 @@ export default function App() {
     await dbService.saveMaster(newProduct); await loadMasters(); handleSelectMaster(newProduct, revisionId);
   };
 
+  const handleStartSession = async () => {
+    if (sessionActive || !activeMaster || !activeRevision) return;
+    const started = await pipeline.startSession();
+    if (started) setSessionActive(true);
+  };
+
+  const handleEndSession = () => {
+    if (pipeline.state !== 'WAITING_FOR_PART') return;
+    pipeline.resetPipeline();
+    setSessionActive(false);
+  };
+
   const handleSync = async () => { await dbService.flushSyncQueue(); setPendingSyncCount(await dbService.getPendingSyncCount()); };
   const toggleMute = () => { const next = !isMuted; setIsMuted(next); soundService.setMuted(next); };
 
@@ -145,7 +162,7 @@ export default function App() {
     <div className="min-h-screen rvi-app text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
       <Navbar activeTab={activeTab} setActiveTab={setActiveTab} role={role} setRole={() => undefined} activeMaster={activeMaster} activeRevision={activeRevision} isMuted={isMuted} toggleMute={toggleMute} pendingSyncCount={pendingSyncCount} onSync={handleSync} />
       <main className="rvi-main flex-1 max-w-[1500px] w-full mx-auto p-3 sm:p-5 lg:p-6">
-        {activeTab === 'INSPECTION' && <LiveInspectionView videoRef={camera.videoRef} canvasRef={camera.canvasRef} cameraState={camera.cameraState} errorMessage={camera.errorMessage} fps={camera.fps} videoDimensions={camera.videoDimensions} state={pipeline.state} stabilizationProgress={pipeline.stabilizationProgress} motionDelta={pipeline.motionDelta} currentResult={pipeline.currentResult} latestAlignment={pipeline.latestAlignment} latestRoiResults={pipeline.latestRoiResults} latestExtraObjects={pipeline.latestExtraObjects} stats={pipeline.stats} liveMetrics={pipeline.liveMetrics} plcHandshake={pipeline.plcHandshake} plcSignals={pipeline.plcSignals} activeMaster={activeMaster} activeRevision={activeRevision} role={role} isVirtualMode={camera.isVirtualMode} virtualScenario={camera.virtualScenario} setVirtualScenario={camera.setVirtualScenario} enableVirtualMode={camera.enableVirtualMode} enablePhysicalCamera={camera.enablePhysicalCamera} calibrateBackground={pipeline.calibrateBackground} onOpenHistory={() => setActiveTab('HISTORY')} onOpenPlcConfig={() => setActiveTab('SETTINGS')} />}
+        {activeTab === 'INSPECTION' && <LiveInspectionView videoRef={camera.videoRef} canvasRef={camera.canvasRef} cameraState={camera.cameraState} errorMessage={camera.errorMessage} fps={camera.fps} videoDimensions={camera.videoDimensions} state={pipeline.state} stabilizationProgress={pipeline.stabilizationProgress} motionDelta={pipeline.motionDelta} currentResult={pipeline.currentResult} latestAlignment={pipeline.latestAlignment} latestRoiResults={pipeline.latestRoiResults} latestExtraObjects={pipeline.latestExtraObjects} stats={pipeline.stats} liveMetrics={pipeline.liveMetrics} plcHandshake={pipeline.plcHandshake} plcSignals={pipeline.plcSignals} activeMaster={activeMaster} activeRevision={activeRevision} role={role} isVirtualMode={camera.isVirtualMode} virtualScenario={camera.virtualScenario} setVirtualScenario={camera.setVirtualScenario} enableVirtualMode={camera.enableVirtualMode} enablePhysicalCamera={camera.enablePhysicalCamera} calibrateBackground={pipeline.calibrateBackground} onOpenHistory={() => setActiveTab('HISTORY')} onOpenPlcConfig={() => setActiveTab('SETTINGS')} onEndSession={handleEndSession} onStartSession={handleStartSession} sessionActive={sessionActive} processingFps={processingFps} setProcessingFps={setProcessingFps} />}
         {activeTab === 'HISTORY' && <InspectionHistoryView onRefreshStats={loadMasters} />}
         {activeTab === 'SETTINGS' && <SettingsView onNavigate={setActiveTab} onClose={() => setActiveTab('INSPECTION')} />}
         {activeTab === 'MASTERS' && <MasterManager masters={masters} activeMaster={activeMaster} activeRevision={activeRevision} onSelectMaster={handleSelectMaster} onRefreshMasters={loadMasters} onOpenSetupModal={handleOpenSetupModal} onCreateNewMaster={handleCreateNewMaster} />}
