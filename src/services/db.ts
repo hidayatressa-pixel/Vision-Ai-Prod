@@ -133,11 +133,19 @@ class DatabaseService {
   }
 
   private writeLocalHistory(records: InspectionRecord[]): void {
-    // Keep the newest records first. Unsynced records are never silently
-    // discarded in favor of older synced history when the limit is reached.
+    // Prioritize pending records so a long outage does not evict the outbox
+    // in favor of newer, already-synced history. Refuse to overwrite pending
+    // records if the outbox itself exceeds its safety bound.
     const ordered = [...records].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    const pending = ordered.filter((record) => !record.syncedToCloud);
+    if (pending.length > 5000) {
+      throw new Error('Pending inspection outbox exceeds 5,000 records; restore cloud connectivity before recording more inspections.');
+    }
+    const retained = [...pending, ...ordered.filter((record) => record.syncedToCloud)]
+      .slice(0, 5000)
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
     try {
-      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(ordered.slice(0, 5000)));
+      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(retained));
     } catch (error) {
       console.error('[DatabaseService] Local history/outbox write failed:', error);
       throw new Error('Local inspection history could not be saved. Check browser storage capacity before continuing.');
