@@ -59,6 +59,11 @@ interface LiveInspectionViewProps {
   calibrateBackground: () => void;
   onOpenHistory: () => void;
   onOpenPlcConfig?: () => void;
+  onStartSession?: () => void;
+  onEndSession?: () => void;
+  sessionActive?: boolean;
+  processingFps?: number;
+  setProcessingFps?: (fps: number) => void;
 }
 
 export const LiveInspectionView: React.FC<LiveInspectionViewProps> = ({
@@ -90,6 +95,11 @@ export const LiveInspectionView: React.FC<LiveInspectionViewProps> = ({
   calibrateBackground,
   onOpenHistory,
   onOpenPlcConfig,
+  onStartSession,
+  onEndSession,
+  sessionActive = false,
+  processingFps = 5,
+  setProcessingFps,
 }) => {
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
