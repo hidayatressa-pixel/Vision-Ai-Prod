@@ -1,7 +1,9 @@
+import { readFileSync } from 'node:fs';
+
 const WEIGHTS = {
-  centerContrast: 0.22,
-  edgeDensity: 0.24,
-  circularity: 0.20,
+  centerContrast: 0.24,
+  edgeDensity: 0.27,
+  circularity: 0.24,
   brightness: 0.04,
   centerBrightness: 0.03,
   ringBrightness: 0.03,
@@ -11,6 +13,22 @@ const WEIGHTS = {
   saturation: 0.06,
   centerTexture: 0.12,
 };
+
+
+const productionSource = readFileSync(new URL('../src/vision/roiInspector.ts', import.meta.url), 'utf8');
+const weightBlock = productionSource.match(/function signatureSimilarity[\s\S]*?const weights = \{([\s\S]*?)\n  \};/);
+if (!weightBlock) {
+  console.error('Could not locate production signatureSimilarity weights.');
+  process.exit(1);
+}
+for (const [key, value] of Object.entries(WEIGHTS)) {
+  const match = weightBlock[1].match(new RegExp(key + ':\\s*([0-9.]+)'));
+  if (!match || Number(match[1]) !== value) {
+    console.error(`Recognizer weight mismatch for ${key}: audit=${value}, production=${match ? match[1] : 'missing'}`);
+    process.exit(1);
+  }
+}
+console.log('Production signature weights match audit fixture.');
 
 const reference = {
   brightness: 0.45,
@@ -61,8 +79,8 @@ for (const [name, expected, candidate] of cases) {
 }
 
 if (failures > 0) {
-  console.error(`Adversarial recognizer audit failed: ${failures} case(s)`);
+  console.error(`Adversarial signature-fixture audit failed: ${failures} case(s)`);
   process.exit(1);
 }
 
-console.log(`Adversarial recognizer audit passed: ${cases.length} cases`);
+console.log(`Adversarial signature-fixture audit passed: ${cases.length} cases`);

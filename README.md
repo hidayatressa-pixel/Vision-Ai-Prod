@@ -18,13 +18,13 @@ The application is designed for a fixed camera station where each workpiece is l
 
 This repository is the **production/on-premise Vision-AI variant**. It does not require AWS Lambda, Amazon S3, API Gateway, or another AWS runtime for inspection.
 
-The inspection decision runs locally in the browser/device using OpenCV 5-assisted vision processing, the configured master/ROI rules, and the PLC adapter. Cloud history is optional and currently uses Supabase when configured.
+The inspection decision runs locally in the browser/device using OpenCV 5-assisted vision processing, the configured master/ROI rules, and the PLC adapter. Master settings remain local to each browser/device; only inspection history is shared through Supabase when configured.
 
 The AWS/OpenCV 5 hackathon implementation is maintained separately in the `Vision-AI-AWS` repository and is intentionally not part of this production runtime.
 
 ## Cloud history setup
 
-History is now cloud-first. The browser no longer stores inspection history in IndexedDB or uses a local sync queue.
+Master configurations (including uploaded reference-image data) are persisted in station-local IndexedDB, so they survive page refreshes on the same browser/device. Inspection history is cloud-first when Supabase is configured. If a cloud write fails, the record is queued in local browser storage and retried when history is opened again. The queue is bounded to 5,000 records; monitor browser storage capacity and verify pending records sync before clearing browser data.
 
 The application uses the Supabase REST Data API with the browser-safe **publishable key**. Supabase recommends exposing only the required tables/functions and protecting them with Row Level Security (RLS). urlSupabase JavaScript installation docshttps://supabase.com/docs/reference/javascript/installing
 

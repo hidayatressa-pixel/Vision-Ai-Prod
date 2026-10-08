@@ -34,6 +34,8 @@ export interface UseInspectionPipelineProps {
   captureFrame: () => ImageData | null;
   cameraState: string;
   fps: number;
+  processingFps: number;
+  sessionActive: boolean;
 }
 
 export function useInspectionPipeline({
@@ -42,6 +44,8 @@ export function useInspectionPipeline({
   captureFrame,
   cameraState,
   fps,
+  processingFps,
+  sessionActive,
 }: UseInspectionPipelineProps) {
   const [state, setState] = useState<InspectionMachineState>('WAITING_FOR_PART');
   const [stabilizationProgress, setStabilizationProgress] = useState<number>(0);
@@ -147,6 +151,56 @@ export function useInspectionPipeline({
     const regionStats = getRegionStats(gray, rx, ry, rw, rh);
     presenceDetectorRef.current.setBaseline(regionStats);
   }, [captureFrame]);
+
+  // Start a controlled production session. Baseline capture happens before
+  // continuous detection is enabled, matching the behavioral reference.
+  const startSession = useCallback(async () => {
+    if (sessionActive || !activeRevisionRef.current) return false;
+
+    const revision = activeRevisionRef.current;
+    const samples: { mean: number; variance: number }[] = [];
+
+    for (let i = 0; i < 5; i += 1) {
+      const frame = captureFrame();
+      if (frame) {
+        const gray = toGrayscale(frame);
+        const dz = revision.detectionZone;
+        samples.push(
+          getRegionStats(
+            gray,
+            dz.x * gray.width,
+            dz.y * gray.height,
+            dz.width * gray.width,
+            dz.height * gray.height
+          )
+        );
+      }
+      if (i < 4) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 80));
+      }
+    }
+
+    if (samples.length < 3) return false;
+
+    const baseline = {
+      mean: samples.reduce((sum, sample) => sum + sample.mean, 0) / samples.length,
+      variance: samples.reduce((sum, sample) => sum + sample.variance, 0) / samples.length,
+    };
+
+    presenceDetectorRef.current.resetPartState();
+    presenceDetectorRef.current.setBaseline(baseline);
+    setState('WAITING_FOR_PART');
+    setStabilizationProgress(0);
+    setMotionDelta(0);
+    setCurrentResult(null);
+    setLatestAlignment(null);
+    setLatestRoiResults([]);
+    setLatestExtraObjects([]);
+    detectionStartTimeRef.current = 0;
+    cycleStartTimeRef.current = 0;
+    isProcessingRef.current = false;
+    return true;
+  }, [captureFrame, sessionActive]);
 
   // Execute actual inspection on settled frame
   const executeInspection = useCallback(
@@ -450,6 +504,10 @@ export function useInspectionPipeline({
 
       const inspectionId = `INSP-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
       const plcSequenceNumber = plcService.getHandshakeState().lastSequenceNumber;
+      // ARCHITECTURE RULE:
+      // The rule-engine final judgement is the machine decision source.
+      // PLC receives this result directly; DB persistence is intentionally
+      // asynchronous and must never be read back to decide the machine action.
       const plcHandshakeResult = await plcService.sendResultAndHandshake({
         sequenceNumber: plcSequenceNumber,
         inspectionId,
@@ -594,8 +652,9 @@ export function useInspectionPipeline({
       }
     }, [captureFrame, fps]);
 
-  // Main real-time pipeline tick loop (~20 FPS)
+  // Main real-time pipeline tick loop. Detection cadence follows the configured processing FPS.
   useEffect(() => {
+    if (!sessionActive) return;
     if (cameraState === 'error' || cameraState === 'permission_denied') return;
     if (!activeRevision) return;
 
@@ -731,10 +790,10 @@ export function useInspectionPipeline({
       requestAnimationFrame(() => {
         executeInspection(frameData, partDetectDuration, stabDuration);
       });
-    }, 50); // 20 ticks per second
+    }, Math.max(50, Math.round(1000 / Math.max(1, processingFps))));
 
     return () => clearInterval(interval);
-  }, [activeRevision, cameraState, captureFrame, executeInspection, state]);
+  }, [activeRevision, cameraState, captureFrame, executeInspection, state, processingFps, sessionActive]);
 
   return {
     state,
@@ -750,5 +809,6 @@ export function useInspectionPipeline({
     plcSignals,
     resetPipeline,
     calibrateBackground,
+    startSession,
   };
 }
