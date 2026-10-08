@@ -20,6 +20,7 @@ const LOCAL_HISTORY_KEY = 'vision-ai-inspection-history';
 
 class DatabaseService {
   private masterDbPromise: Promise<IDBDatabase> | null = null;
+  private syncPromise: Promise<{ synced: number }> | null = null;
 
   private getCloudConfig() {
     if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -236,6 +237,9 @@ class DatabaseService {
     const local = this.getLocalHistory();
     if (!SUPABASE_URL || !SUPABASE_KEY) return local.slice(0, safeLimit);
 
+    // Reading history is also a safe retry point for records saved while offline.
+    void this.flushSyncQueue();
+
     try {
       const rows = await this.request<any[]>(`?select=*&order=timestamp.desc&limit=${safeLimit}`);
       return this.mergeHistory(rows.map((row) => this.fromCloudRecord(row)), local).slice(0, safeLimit);
@@ -312,25 +316,34 @@ class DatabaseService {
 
   public async flushSyncQueue(): Promise<{ synced: number }> {
     if (!SUPABASE_URL || !SUPABASE_KEY) return { synced: 0 };
-    const pending = this.getLocalHistory().filter((record) => !record.syncedToCloud);
-    let synced = 0;
+    if (this.syncPromise) return this.syncPromise;
 
-    for (const record of pending) {
-      try {
-        await this.request('', {
-          method: 'POST',
-          headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: JSON.stringify(this.toCloudRecord(record)),
-        });
-        this.removeLocalHistoryRecord(record.id);
-        synced++;
-      } catch (error) {
-        // Stop at the first failed write; remaining records stay queued.
-        console.warn('[DatabaseService] Outbox sync paused; records remain queued:', error);
-        break;
+    this.syncPromise = (async () => {
+      const pending = this.getLocalHistory().filter((record) => !record.syncedToCloud);
+      let synced = 0;
+      for (const record of pending) {
+        try {
+          await this.request('', {
+            method: 'POST',
+            headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify(this.toCloudRecord(record)),
+          });
+          this.removeLocalHistoryRecord(record.id);
+          synced++;
+        } catch (error) {
+          // Stop at the first failed write; remaining records stay queued.
+          console.warn('[DatabaseService] Outbox sync paused; records remain queued:', error);
+          break;
+        }
       }
+      return { synced };
+    })();
+
+    try {
+      return await this.syncPromise;
+    } finally {
+      this.syncPromise = null;
     }
-    return { synced };
   }
 }
 
