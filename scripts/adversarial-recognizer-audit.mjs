@@ -16,7 +16,7 @@ const WEIGHTS = {
 
 
 const productionSource = readFileSync(new URL('../src/vision/roiInspector.ts', import.meta.url), 'utf8');
-const weightBlock = productionSource.match(/function signatureSimilarity[\\s\\S]*?const weights = \\{([\\s\\S]*?)\\n  \\};/);
+const weightBlock = productionSource.match(/function signatureSimilarity[\s\S]*?const weights = \{([\s\S]*?)\n  \};/);
 if (!weightBlock) {
   console.error('Could not locate production signatureSimilarity weights.');
   process.exit(1);
