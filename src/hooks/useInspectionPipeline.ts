@@ -50,6 +50,9 @@ export function useInspectionPipeline({
   const [state, setState] = useState<InspectionMachineState>('WAITING_FOR_PART');
   const [stabilizationProgress, setStabilizationProgress] = useState<number>(0);
   const [motionDelta, setMotionDelta] = useState<number>(0);
+  // Session may end only after the live detector confirms the jig is empty,
+  // the inspection latch is released, and no PLC reset is in progress.
+  const [canEndSession, setCanEndSession] = useState<boolean>(false);
 
   // Latest inspection data
   const [currentResult, setCurrentResult] = useState<InspectionRecord | null>(null);
@@ -124,6 +127,7 @@ export function useInspectionPipeline({
     }
 
     presenceDetectorRef.current.resetPartState();
+    setCanEndSession(true);
     setState('WAITING_FOR_PART');
     setStabilizationProgress(0);
     setMotionDelta(0);
@@ -189,6 +193,7 @@ export function useInspectionPipeline({
 
     presenceDetectorRef.current.resetPartState();
     presenceDetectorRef.current.setBaseline(baseline);
+    setCanEndSession(true);
     setState('WAITING_FOR_PART');
     setStabilizationProgress(0);
     setMotionDelta(0);
@@ -692,6 +697,12 @@ export function useInspectionPipeline({
       }
 
       const awaitingRemoval = presenceDetectorRef.current.isAwaitingRemoval();
+      setCanEndSession(
+        !presence.isPartPresent &&
+        !awaitingRemoval &&
+        !isProcessingRef.current &&
+        !isResettingPlcRef.current
+      );
 
       // Post-judgement lifecycle is deliberately one-way:
       // once a physical part has received a judgement, the result is latched.
@@ -724,6 +735,12 @@ export function useInspectionPipeline({
             setState('SYSTEM_ERROR');
           }).finally(() => {
             isResettingPlcRef.current = false;
+            // If PLC reset failed, keep the interlock blocked but let the
+            // engineer end the UI session and inspect settings/diagnostics.
+            setCanEndSession(
+              !presenceDetectorRef.current.isAwaitingRemoval() &&
+              !isProcessingRef.current
+            );
           });
         }
 
@@ -810,5 +827,6 @@ export function useInspectionPipeline({
     resetPipeline,
     calibrateBackground,
     startSession,
+    canEndSession,
   };
 }
