@@ -715,6 +715,7 @@ export function useInspectionPipeline({
           // until the PLC confirms that its interlock was actually reset.
           // This prevents a failed reset from opening a new inspection cycle.
           isResettingPlcRef.current = true;
+          setCanEndSession(false);
           void plcService.clearInterlock().then((resetOk) => {
             if (resetOk) {
               presenceDetectorRef.current.resetPartState();
