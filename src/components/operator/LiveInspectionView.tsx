@@ -61,6 +61,7 @@ interface LiveInspectionViewProps {
   onOpenPlcConfig?: () => void;
   onStartSession?: () => void;
   onEndSession?: () => void;
+  canEndSession?: boolean;
   sessionActive?: boolean;
 }
 
@@ -95,6 +96,7 @@ export const LiveInspectionView: React.FC<LiveInspectionViewProps> = ({
   onOpenPlcConfig,
   onStartSession,
   onEndSession,
+  canEndSession = false,
   sessionActive = false,
 }) => {
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -341,9 +343,9 @@ export const LiveInspectionView: React.FC<LiveInspectionViewProps> = ({
             <button
               type="button"
               onClick={onEndSession}
-              disabled={state !== 'WAITING_FOR_PART'}
+              disabled={!canEndSession}
               className="pointer-events-auto px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-amber-500/30 text-[10px] font-mono text-amber-300 hover:bg-amber-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-              title={state === 'WAITING_FOR_PART' ? 'End inspection session' : 'Remove the inspected part before ending the session'}
+              title={canEndSession ? 'End inspection session and open engineering settings' : 'Place/remove the part until the jig is confirmed empty and the PLC reset is settled'}
             >
               END SESSION
             </button>
