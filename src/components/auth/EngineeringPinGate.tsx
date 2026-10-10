@@ -62,7 +62,7 @@ export const EngineeringPinGate: React.FC<EngineeringPinGateProps> = ({
             autoComplete="current-password"
             maxLength={4}
             value={password}
-            onChange={(event) => setPassword(event.target.value.replace(/\\D/g, ''))}
+            onChange={(event) => setPassword(event.target.value.replace(/\D/g, ''))}
             placeholder="Enter 4-digit PIN"
             aria-label="Engineering PIN"
             className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-center text-lg tracking-[0.5em] text-white outline-none focus:border-amber-400"
