@@ -12,6 +12,7 @@ import { InspectionHistoryView } from './components/history/InspectionHistoryVie
 import { DiagnosticsModal } from './components/diagnostics/DiagnosticsModal';
 import { LiveInspectionView } from './components/operator/LiveInspectionView';
 import { SettingsView } from './components/settings/SettingsView';
+import { WelcomeScreen } from './components/auth/WelcomeScreen';
 import { useCamera } from './hooks/useCamera';
 import { useInspectionPipeline } from './hooks/useInspectionPipeline';
 import { soundService } from './services/audio';
@@ -31,6 +32,7 @@ export default function App() {
   if (isPhoneCameraRoute()) {
     return <PhoneCameraView />;
   }
+  const [startupAuthorized, setStartupAuthorized] = useState(false);
   const [activeTab, setActiveTab] = useState<ActiveTab>('INSPECTION');
   const [role] = useState<UserRole>('OPERATOR');
   const [sessionActive, setSessionActive] = useState(false);
@@ -107,9 +109,6 @@ export default function App() {
   }, []);
 
   const handleSelectMaster = (master: MasterProduct, revisionId?: string) => {
-    // Do not allow master/revision changes during an active inspection cycle.
-    // This keeps the selected configuration aligned with the physical part
-    // and prevents an operator action from bypassing the inspection latch.
     if (sessionActive || pipeline.state !== 'WAITING_FOR_PART') {
       return;
     }
@@ -150,22 +149,21 @@ export default function App() {
   };
 
   const handleEndSession = () => {
-    // UI session can end only when the live pipeline confirms the jig is empty
-    // and no inspection/removal handshake is active. Do not clear PLC interlock
-    // from this navigation action; machine safety remains owned by PLC lifecycle.
     if (!sessionActive || !pipeline.canEndSession) return;
     setSessionActive(false);
   };
 
   const handleNavigate = (tab: ActiveTab) => {
-    // During an active production session, engineering configuration is locked.
-    // Only inspection and history remain accessible.
     if (configurationLocked && tab !== 'INSPECTION' && tab !== 'HISTORY') return;
     setActiveTab(tab);
   };
 
   const handleSync = async () => { await dbService.flushSyncQueue(); setPendingSyncCount(await dbService.getPendingSyncCount()); };
   const toggleMute = () => { const next = !isMuted; setIsMuted(next); soundService.setMuted(next); };
+
+  if (!startupAuthorized) {
+    return <WelcomeScreen onAuthorized={() => setStartupAuthorized(true)} />;
+  }
 
   return (
     <div className="min-h-screen rvi-app text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">

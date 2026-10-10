@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Boxes, Camera, Cable, Gauge, LockKeyhole, X } from 'lucide-react';
 import { ActiveTab } from '../Navbar';
+import { EngineeringPinGate } from '../auth/EngineeringPinGate';
 
 interface SettingsViewProps {
   onNavigate: (tab: ActiveTab) => void;
@@ -8,47 +9,16 @@ interface SettingsViewProps {
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate, onClose }) => {
-  const [password, setPassword] = useState('');
   const [unlocked, setUnlocked] = useState(false);
-  const [error, setError] = useState('');
-
-  const unlock = () => {
-    if (password === '8888') {
-      setUnlocked(true);
-      setError('');
-      return;
-    }
-    setError('Password salah');
-    setPassword('');
-  };
 
   if (!unlocked) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center">
-        <div className="w-full max-w-sm rounded-3xl border border-slate-800 bg-slate-900/95 p-7 shadow-2xl">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-400">
-            <LockKeyhole className="h-7 w-7" />
-          </div>
-          <div className="text-center">
-            <h2 className="text-lg font-bold text-white">Settings</h2>
-            <p className="mt-1 text-xs text-slate-400">Engineering settings require authorization.</p>
-          </div>
-          <input
-            autoFocus
-            type="password"
-            inputMode="numeric"
-            maxLength={4}
-            value={password}
-            onChange={(e) => setPassword(e.target.value.replace(/\D/g, ''))}
-            onKeyDown={(e) => e.key === 'Enter' && unlock()}
-            placeholder="Enter password"
-            className="mt-6 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-center text-lg tracking-[0.5em] text-white outline-none focus:border-amber-400"
-          />
-          {error && <div className="mt-2 text-center text-xs text-red-400">{error}</div>}
-          <button onClick={unlock} className="mt-4 w-full rounded-xl bg-amber-500 px-4 py-3 text-sm font-bold text-slate-950 hover:bg-amber-400">Unlock Settings</button>
-          <button onClick={onClose} className="mt-3 w-full rounded-xl border border-slate-800 px-4 py-2.5 text-xs text-slate-400 hover:text-white">Cancel</button>
-        </div>
-      </div>
+      <EngineeringPinGate
+        title="Settings"
+        description="Engineering settings require authorization."
+        onSuccess={() => setUnlocked(true)}
+        onCancel={onClose}
+      />
     );
   }
 
@@ -67,7 +37,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate, onClose 
           <h1 className="mt-1 text-xl font-bold text-white">System Settings</h1>
           <p className="text-xs text-slate-400">Protected configuration area.</p>
         </div>
-        <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X /></button>
+        <button onClick={onClose} aria-label="Close settings" className="rounded-xl p-2 text-slate-400 hover:bg-slate-800 hover:text-white"><X /></button>
       </div>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {items.map((item) => (
