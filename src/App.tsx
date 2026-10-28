@@ -7,6 +7,7 @@ import { ActiveTab, Navbar, UserRole } from './components/Navbar';
 import { CameraCalibrationView } from './components/engineer/CameraCalibrationView';
 import { MasterManager } from './components/engineer/MasterManager';
 import { MasterSetupModal } from './components/engineer/MasterSetupModal';
+import { MasterSetupEntryModal } from './components/engineer/MasterSetupEntryModal';
 import { PLCConfigurationView } from './components/engineer/PLCConfigurationView';
 import { InspectionHistoryView } from './components/history/InspectionHistoryView';
 import { DiagnosticsModal } from './components/diagnostics/DiagnosticsModal';
@@ -43,6 +44,7 @@ export default function App() {
   const [activeMaster, setActiveMaster] = useState<MasterProduct | null>(null);
   const [activeRevision, setActiveRevision] = useState<MasterRevision | null>(null);
   const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
+  const [isMasterEntryOpen, setIsMasterEntryOpen] = useState(false);
   const [setupMaster, setSetupMaster] = useState<MasterProduct | null>(null);
   const [setupRevision, setSetupRevision] = useState<MasterRevision | null>(null);
   const [cameraSourceMode, setCameraSourceMode] = useState<CameraSourceMode>('LOCAL_CAMERA');
