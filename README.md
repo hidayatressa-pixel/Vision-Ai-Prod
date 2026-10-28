@@ -195,7 +195,7 @@ The **Settings → Storage & Server** screen controls the runtime storage target
 - **Local Station** uses browser IndexedDB.
 - **Local Company Server** uses the authenticated internal HTTP API implemented in `server/local-storage-server.mjs`.
 - Master reads/writes/deletes and inspection-history reads/writes/clears follow the active target. When the server target is active, API failures are surfaced; the app does not silently write to IndexedDB as a fallback.
-- The server API persists data to a JSON file (default `server/data/vision-store.json`) using atomic file replacement. Back up this file and restrict filesystem access. This is an initial on-premise MVP, not a substitute for a managed production database or enterprise identity provider.
+- The server API persists data to a JSON file (default `data/vision-store.json`) using atomic file replacement. Back up this file and restrict filesystem access. This is an initial on-premise MVP, not a substitute for a managed production database or enterprise identity provider.
 - **Test connection** checks the API URL and bearer token before activation. **Migrate local data & activate** sends an explicit snapshot of local masters and history, merges by ID, and keeps the original IndexedDB data. If an ID exists on the server with different content, the migration is rejected rather than overwriting that record. **Activate without migration** is available only after connection testing and requires confirmation.
 - Legacy browser settings that only saved a server draft remain on Local Station until the new runtime configuration version is explicitly activated.
 
