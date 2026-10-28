@@ -151,6 +151,12 @@ function parseOutput(
   if (channels < 5) {
     throw new Error('YOLO output must contain box coordinates and at least one class score.');
   }
+  const outputClassCount = channels - 4;
+  if (config.labels.length > 0 && config.labels.length !== outputClassCount) {
+    throw new Error(
+      `YOLO class-label mismatch: configured ${config.labels.length} labels, model output contains ${outputClassCount} classes.`
+    );
+  }
 
   const at = (candidate: number, channel: number) =>
     channelFirst ? data[channel * candidates + candidate] : data[candidate * channels + channel];
@@ -242,7 +248,9 @@ export function applyYoloSupportingEvidence(
 ): ROIInspectionResult[] {
   if (frameWidth <= 0 || frameHeight <= 0) return results;
 
-  const defaultScrewLabels = new Set(readConfig().screwClassNames);
+  const config = readConfig();
+  const defaultScrewLabels = new Set(config.screwClassNames);
+  const configuredLabels = new Set(config.labels.map((label) => label.trim().toLowerCase()));
   const frameScale = Math.min(frameWidth, frameHeight);
   const byId = new Map(rois.map((roi) => [roi.id, roi]));
 
@@ -317,13 +325,33 @@ export function applyYoloSupportingEvidence(
       // / uncertainty according to its configured policy.
       if (roi.objectType !== 'screw') {
         const expectedClass = (roi.objectClass || roi.objectType).trim();
+        const normalizedClass = expectedClass.toLowerCase();
+        const classAliases = new Set([normalizedClass]);
+        if (['screw', 'bolt', 'fastener'].includes(normalizedClass)) {
+          defaultScrewLabels.forEach((label) => classAliases.add(label));
+        }
+        const classSupported = [...classAliases].some((label) => configuredLabels.has(label));
+
+        // A valid inference with a supported class but no detection in the
+        // required ROI is evidence of absence (NG). If the class is not in the
+        // model label map, absence is inconclusive and must remain INVALID.
+        if (!classSupported) {
+          return {
+            ...result,
+            isPresent: false,
+            evidence: 'UNCERTAIN',
+            status: 'WARNING',
+            confidence: 0,
+            failureReason: `YOLO model does not declare a compatible class label for "${expectedClass}"`,
+          };
+        }
         return {
           ...result,
           isPresent: false,
-          evidence: 'UNCERTAIN',
-          status: 'WARNING',
+          evidence: 'ABSENT',
+          status: 'FAIL',
           confidence: 0,
-          failureReason: `YOLO did not confirm class "${expectedClass}" in ${roi.name}`,
+          failureReason: `Expected class "${expectedClass}" was not detected in ${roi.name}`,
         };
       }
       return result;
