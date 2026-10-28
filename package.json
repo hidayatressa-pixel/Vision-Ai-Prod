@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "tsc --noEmit",
     "audit:recognizer": "node scripts/adversarial-recognizer-audit.mjs",
-    "audit:vision-architecture": "node scripts/vision-architecture-audit.mjs"
+    "audit:vision-architecture": "node scripts/vision-architecture-audit.mjs",
+    "server:local": "node server/local-storage-server.mjs",
+    "check:server": "node --check server/local-storage-server.mjs"
   },
   "dependencies": {
     "@opencvjs/web": "5.0.0-release.2",
