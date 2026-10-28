@@ -200,14 +200,23 @@ export function applyYoloSupportingEvidence(
   frameHeight: number
 ): ROIInspectionResult[] {
   if (!detections.length || frameWidth <= 0 || frameHeight <= 0) return results;
-  const allowedLabels = new Set(readConfig().screwClassNames);
+  const defaultScrewLabels = new Set(readConfig().screwClassNames);
   const frameScale = Math.min(frameWidth, frameHeight);
   const byId = new Map(rois.map((roi) => [roi.id, roi]));
 
   return results.map((result) => {
     if (result.isPresent || result.evidence === 'PRESENT') return result;
     const roi = byId.get(result.roiId);
-    if (!roi || !roi.isRequired || roi.objectType !== 'screw') return result;
+    if (!roi || !roi.isRequired) return result;
+
+    // Every ROI can use YOLO, not only screws. The configured class name must
+    // match a class label emitted by the loaded model; screw aliases are kept
+    // for backward compatibility with existing masters.
+    const expectedClass = (roi.objectClass || roi.objectType).trim().toLowerCase();
+    const allowedLabels = new Set([expectedClass]);
+    if (roi.objectType === 'screw' || defaultScrewLabels.has(expectedClass)) {
+      defaultScrewLabels.forEach((label) => allowedLabels.add(label));
+    }
     const radiusPx = Math.max(roi.toleranceRadius * frameScale, tolerance.maxPositionOffsetPx);
     const candidate = detections
       .filter((item) => allowedLabels.has(item.label.toLowerCase()) && item.confidence >= (roi.minConfidence || tolerance.minScrewConfidence))
