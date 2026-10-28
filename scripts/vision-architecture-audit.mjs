@@ -20,6 +20,9 @@ const pipeline = read('../src/hooks/useInspectionPipeline.ts');
 const db = read('../src/services/db.ts');
 const seed = read('../src/services/sampleData.ts');
 const internalAdapter = read('../src/services/storage/InternalServerStorageAdapter.ts');
+const storageSettings = read('../src/components/settings/StorageServerSettings.tsx');
+const settingsView = read('../src/components/settings/SettingsView.tsx');
+const app = read('../src/App.tsx');
 const pinGate = read('../src/components/auth/EngineeringPinGate.tsx');
 const readme = read('../README.md');
 const packageJson = JSON.parse(read('../package.json'));
@@ -110,6 +113,17 @@ check(
 );
 
 check(
+  'Storage target menu does not pretend the internal server is active',
+  storageSettings.includes('STORAGE_CONFIG_KEY') &&
+    storageSettings.includes('Active persistence: IndexedDB (this station)') &&
+    storageSettings.includes('Save configuration draft') &&
+    !/\\bfetch\\s*\\(/.test(storageSettings) &&
+    settingsView.includes("tab: 'STORAGE_SETUP'") &&
+    app.includes('<StorageServerSettings'),
+  'The UI may save a server profile, but must keep IndexedDB active until the approved internal API adapter is implemented.'
+);
+
+check(
   'Engineering PIN is not represented as production authentication',
   pinGate.includes('not production authentication') &&
     readme.includes('can be inspected or bypassed') &&
@@ -123,6 +137,6 @@ check(
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 13);
+assert.equal(checks.length, 14);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
