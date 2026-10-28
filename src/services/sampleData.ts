@@ -114,11 +114,9 @@ export async function initSeedDataIfEmpty() {
   const reflectorMasters = existing.filter(isReflector);
 
   if (reflectorMasters.length === 0) {
-    // No production master exists: create exactly one clean canonical record.
+    // Seed the example master without deleting user-created product masters.
+    // New products must survive subsequent startup initialization.
     await dbService.saveMaster(SEED_PRODUCT_A);
-    for (const master of existing) {
-      await dbService.deleteMaster(master.id);
-    }
     return;
   }
 
