@@ -13,7 +13,7 @@ import {
   Plus,
   Trash2,
 } from 'lucide-react';
-import { InspectionROI, MasterProduct, MasterRevision } from '../../types/master';
+import { InspectionROI, MasterProduct, MasterRevision, ReferenceImage } from '../../types/master';
 import { dbService } from '../../services/db';
 
 interface MasterSetupModalProps {
@@ -275,6 +275,31 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
 
   const selectedReference = editedRevision.referenceImages?.find((reference) => reference.id === selectedReferenceId);
 
+  const handleAddReferenceImage = (file: File | null) => {
+    if (!file) return;
+    if (selectedItemType !== 'ROI' || !selectedId) {
+      setSaveError('Select an ROI before adding its golden reference image.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const roi = editedRevision.inspectionROIs.find((item) => item.id === selectedId);
+      if (!roi || !dataUrl) return;
+      const reference: ReferenceImage = {
+        id: `ref-${Date.now()}`,
+        label: `${roi.name} reference`,
+        roiId: roi.id,
+        imageUrl: dataUrl,
+        description: `Golden reference for ${roi.name}`,
+      };
+      setEditedRevision((prev) => ({ ...prev, referenceImages: [...(prev.referenceImages || []), reference] }));
+      setSelectedReferenceId(reference.id);
+      setSaveError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleReplaceReferenceImage = (referenceId: string, file: File | null) => {
     if (!file) return;
     const reader = new FileReader();
@@ -415,12 +440,13 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                   </div>
                   <p className="text-[10px] text-slate-500 font-mono mt-0.5">Close-up golden references shown side-by-side for judgement verification.</p>
                 </div>
-                {selectedReference && (
-                  <div className="hidden sm:block text-right text-[10px] font-mono">
-                    <div className="text-cyan-300">Selected: {selectedReference.label}</div>
-                    <div className="text-slate-500">Linked ROI: {selectedReference.roiId || '—'}</div>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {selectedReference && <div className="hidden sm:block text-right text-[10px] font-mono"><div className="text-cyan-300">Selected: {selectedReference.label}</div><div className="text-slate-500">Linked ROI: {selectedReference.roiId || '—'}</div></div>}
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20">
+                    <Plus className="h-3 w-3" /> Add reference
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleAddReferenceImage(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                  </label>
+                </div>
               </div>
 
               <div className="flex gap-3 overflow-x-auto pb-1">
