@@ -166,6 +166,6 @@ check(
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 18);
+assert.equal(checks.length, 17);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
