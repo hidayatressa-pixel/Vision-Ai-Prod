@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { InspectionROI, MasterProduct, MasterRevision, ReferenceImage } from '../../types/master';
 import { dbService } from '../../services/db';
+import { yoloEngine } from '../../vision/yoloEngine';
 
 interface MasterSetupModalProps {
   master: MasterProduct;
@@ -632,7 +633,14 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                           const normalized = objectClass.trim().toLowerCase();
                           const objectType: 'screw' | 'connector' | 'clip' | 'label' | 'component' = ['screw', 'bolt', 'fastener'].includes(normalized) ? 'screw' : normalized === 'connector' || normalized === 'clip' || normalized === 'label' ? normalized : 'component';
                           setEditedRevision((prev) => ({ ...prev, inspectionROIs: prev.inspectionROIs.map((r) => r.id === roi.id ? { ...r, objectClass, objectType } : r) }));
-                        }} className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-cyan-200 outline-none focus:border-cyan-400" />
+                        }} className="mb-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-cyan-200 outline-none focus:border-cyan-400" />
+                        <p className={`mb-2 text-[10px] ${!yoloEngine.isConfigured() || !yoloEngine.supportsClass(roi.objectClass || roi.objectType) ? 'text-amber-300' : 'text-emerald-300'}`}>
+                          {!yoloEngine.isConfigured()
+                            ? 'YOLO model is not configured; this class cannot be verified by YOLO.'
+                            : yoloEngine.supportsClass(roi.objectClass || roi.objectType)
+                              ? 'Class label is listed in the configured YOLO model.'
+                              : 'Class is not listed in the configured model labels. Update the model/label map before using this ROI.'}
+                        </p>
 
                         <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
                           <div>Pos X: {(roi.x * 100).toFixed(1)}%</div>
