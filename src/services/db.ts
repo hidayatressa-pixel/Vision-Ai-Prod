@@ -9,6 +9,8 @@
 
 import { InspectionRecord, InspectionStats } from '../types/inspection';
 import { MasterProduct } from '../types/master';
+import { InternalServerStorageAdapter } from './storage/InternalServerStorageAdapter';
+import { readStorageConfig } from './storage/storageConfig';
 
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
@@ -21,6 +23,12 @@ const LOCAL_HISTORY_KEY = 'vision-ai-inspection-history';
 const CLOUD_SYNC_ENABLED = import.meta.env.VITE_ENABLE_SUPABASE_SYNC === 'true';
 
 class DatabaseService {
+  private readonly internalServer = new InternalServerStorageAdapter();
+
+  private usesInternalServer(): boolean {
+    return readStorageConfig().target === 'internal-server';
+  }
+
   private masterDbPromise: Promise<IDBDatabase> | null = null;
   private syncPromise: Promise<{ synced: number }> | null = null;
 
@@ -86,6 +94,7 @@ class DatabaseService {
   }
 
   public async getAllMasters(): Promise<MasterProduct[]> {
+    if (this.usesInternalServer()) return this.internalServer.getMasters();
     const database = await this.openMasterDb();
     return new Promise((resolve, reject) => {
       const request = database.transaction(MASTER_STORE, 'readonly').objectStore(MASTER_STORE).getAll();
@@ -95,6 +104,7 @@ class DatabaseService {
   }
 
   public async getMasterById(id: string): Promise<MasterProduct | null> {
+    if (this.usesInternalServer()) return this.internalServer.getMasterById(id);
     const database = await this.openMasterDb();
     return new Promise((resolve, reject) => {
       const request = database.transaction(MASTER_STORE, 'readonly').objectStore(MASTER_STORE).get(id);
@@ -104,6 +114,7 @@ class DatabaseService {
   }
 
   public async deleteMaster(id: string): Promise<void> {
+    if (this.usesInternalServer()) return this.internalServer.deleteMaster(id);
     const database = await this.openMasterDb();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(MASTER_STORE, 'readwrite');
@@ -115,6 +126,7 @@ class DatabaseService {
   }
 
   public async saveMaster(master: MasterProduct): Promise<void> {
+    if (this.usesInternalServer()) return this.internalServer.saveMaster(master);
     const database = await this.openMasterDb();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(MASTER_STORE, 'readwrite');
@@ -256,6 +268,7 @@ class DatabaseService {
   }
 
   public async saveInspectionRecord(record: InspectionRecord): Promise<void> {
+    if (this.usesInternalServer()) return this.internalServer.saveInspection(record);
     // Local persistence is authoritative for the station: never require a
     // cloud round-trip before the inspection result is safely recorded.
     const localRecord = { ...record, syncedToCloud: false };
@@ -276,6 +289,7 @@ class DatabaseService {
 
   public async getRecentInspections(limit = 500): Promise<InspectionRecord[]> {
     const safeLimit = Math.max(1, Math.min(limit, 5000));
+    if (this.usesInternalServer()) return this.internalServer.getInspectionHistory(safeLimit);
     const local = await this.getLocalHistory();
     if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) {
       return local.slice(0, safeLimit);
@@ -348,6 +362,7 @@ class DatabaseService {
   }
 
   public async clearInspectionHistory(): Promise<void> {
+    if (this.usesInternalServer()) return this.internalServer.clearInspectionHistory();
     const database = await this.openMasterDb();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(HISTORY_STORE, 'readwrite');
@@ -362,11 +377,13 @@ class DatabaseService {
   }
 
   public async getPendingSyncCount(): Promise<number> {
+    if (this.usesInternalServer()) return 0;
     if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) return 0;
     return (await this.getLocalHistory()).filter((record) => !record.syncedToCloud).length;
   }
 
   public async flushSyncQueue(): Promise<{ synced: number }> {
+    if (this.usesInternalServer()) return { synced: 0 };
     if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) return { synced: 0 };
     if (this.syncPromise) return this.syncPromise;
 
