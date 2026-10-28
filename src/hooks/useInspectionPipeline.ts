@@ -294,9 +294,23 @@ export function useInspectionPipeline({
           roiResults = inspection.roiResults;
           extraObjects = inspection.extraObjects;
 
-          // Optional YOLO evidence can recover only a required screw ROI that
-          // classical inspection marked ABSENT/UNCERTAIN. It cannot change
-          // alignment or bypass the deterministic rule engine.
+          // YOLO class evidence is mandatory for non-screw component classes.
+          // The deterministic rule engine still owns final OK/NG/INVALID.
+          const markNonScrewRoisUnverified = () => {
+            roiResults = roiResults.map((result) => {
+              const configuredRoi = revision.inspectionROIs.find((roi) => roi.id === result.roiId);
+              if (!configuredRoi?.isRequired || configuredRoi.objectType === 'screw') return result;
+              return {
+                ...result,
+                isPresent: false,
+                evidence: 'UNCERTAIN' as const,
+                status: 'WARNING' as const,
+                confidence: 0,
+                failureReason: 'A compatible YOLO model is required to verify this component class.',
+              };
+            });
+          };
+
           if (yoloEngine.isConfigured()) {
             try {
               const yoloDetections = await yoloEngine.detect(candidateFrame);
@@ -309,10 +323,11 @@ export function useInspectionPipeline({
                 candidateFrame.height
               );
             } catch (yoloError) {
-              // The existing OpenCV/RVI path remains available if the optional
-              // model is missing, incompatible, or cannot initialize.
-              console.warn('[VisionPipeline] Optional YOLO stage unavailable; using classical ROI evidence:', yoloError);
+              console.warn('[VisionPipeline] YOLO inference failed:', yoloError);
+              markNonScrewRoisUnverified();
             }
+          } else {
+            markNonScrewRoisUnverified();
           }
           roiMs = performance.now() - roiStart;
         }
