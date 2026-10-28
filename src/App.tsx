@@ -126,22 +126,35 @@ export default function App() {
     setSetupMaster(master); setSetupRevision(revision); setIsSetupModalOpen(true);
   };
 
-  const handleCreateNewMaster = async () => {
+  const handleCreateNewMaster = () => {
     if (configurationLocked) return;
-    const newIdx = masters.length + 1;
-    const now = new Date().toISOString();
-    const productId = `prd-${newIdx}-${Date.now()}`;
-    const revisionId = `rev-01-${Date.now()}`;
-    const baseRevision = SEED_PRODUCT_A.revisions.find((revision) => revision.expectedObjectCount === 8) || SEED_PRODUCT_A.revisions[0];
-    const newProduct: MasterProduct = {
-      id: productId,
-      productCode: `PRD-REFLECTOR-HL-GJRA-${String(newIdx).padStart(2, '0')}`,
-      productName: 'Reflector Assy HL GJRA',
-      description: 'New master cloned from the latest eight-screw production baseline.', activeRevisionId: revisionId, isActive: true,
-      createdAt: now, updatedAt: now, createdBy: 'System Engineer',
-      revisions: [{ ...baseRevision, id: revisionId, masterId: productId, revisionCode: 'REV-01', revisionNote: 'Initial production baseline', createdAt: now, updatedAt: now }],
-    };
-    await dbService.saveMaster(newProduct); await loadMasters(); handleSelectMaster(newProduct, revisionId);
+    setIsMasterEntryOpen(true);
+  };
+
+  const handleUseExampleMaster = () => {
+    const example = masters.find((item) => item.id === SEED_PRODUCT_A.id) ||
+      masters.find((item) => item.productCode === SEED_PRODUCT_A.productCode) ||
+      SEED_PRODUCT_A;
+    const revision = example.revisions.find((item) => item.id === example.activeRevisionId) || example.revisions[0];
+    if (!revision) return;
+    setActiveMaster(example);
+    setActiveRevision(revision);
+    setSetupMaster(example);
+    setSetupRevision(revision);
+    setIsMasterEntryOpen(false);
+    setIsSetupModalOpen(true);
+  };
+
+  const handleCreateConfiguredProduct = async (newProduct: MasterProduct) => {
+    await dbService.saveMaster(newProduct);
+    const allMasters = await dbService.getAllMasters();
+    setMasters(allMasters);
+    setActiveMaster(newProduct);
+    setActiveRevision(newProduct.revisions[0]);
+    setSetupMaster(newProduct);
+    setSetupRevision(newProduct.revisions[0]);
+    setIsMasterEntryOpen(false);
+    setIsSetupModalOpen(true);
   };
 
   const handleStartSession = async () => {
