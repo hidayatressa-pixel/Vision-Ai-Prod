@@ -112,91 +112,119 @@ export async function initSeedDataIfEmpty() {
   };
 
   const reflectorMasters = existing.filter(isReflector);
-
   if (reflectorMasters.length === 0) {
-    // Seed the example master without deleting user-created product masters.
-    // New products must survive subsequent startup initialization.
+    // Seed only when no example exists. Never delete or overwrite user products.
     await dbService.saveMaster(SEED_PRODUCT_A);
     return;
   }
 
   const completeness = (master: MasterProduct) => {
     const revision =
-      master.revisions.find((r) => r.id === master.activeRevisionId) ||
+      master.revisions.find((item) => item.id === master.activeRevisionId) ||
       master.revisions[0];
     if (!revision) return 0;
-
     return (
       (revision.masterImageUrl ? 1000 : 0) +
-      revision.referenceImages.filter((r) => Boolean(r.imageUrl)).length * 100 +
-      (revision.anchors.length === 4 ? 20 : 0) +
-      (revision.inspectionROIs.length === 8 ? 20 : 0)
+      (revision.referenceImages?.filter((item) => Boolean(item.imageUrl)).length || 0) * 100 +
+      (revision.anchors?.length === 4 ? 20 : 0) +
+      (revision.inspectionROIs?.length === 8 ? 20 : 0)
     );
   };
 
-  // Keep the most complete Reflector configuration so uploaded master and
-  // reference images are never discarded during cleanup.
+  // Choose the most complete existing example, but preserve its identity and
+  // every revision. Inspection history may reference these IDs.
   const source = [...reflectorMasters].sort((a, b) => {
     const scoreDiff = completeness(b) - completeness(a);
     if (scoreDiff !== 0) return scoreDiff;
-    return a.id === SEED_PRODUCT_A.id ? -1 : 1;
+    return Number(b.id === SEED_PRODUCT_A.id) - Number(a.id === SEED_PRODUCT_A.id);
   })[0];
 
-  const sourceRevision =
-    source.revisions.find((r) => r.id === source.activeRevisionId) ||
+  const currentRevision =
+    source.revisions.find((item) => item.id === source.activeRevisionId) ||
     source.revisions[0];
 
-  if (!sourceRevision) {
-    await dbService.saveMaster(SEED_PRODUCT_A);
+  let revisions = source.revisions;
+  let activeRevisionId = currentRevision?.id || source.activeRevisionId;
+
+  if (!currentRevision) {
+    const seedRevision = SEED_PRODUCT_A.revisions[0];
+    const revisionId = activeRevisionId || `rev-seed-${source.id}`;
+    revisions = [{
+      ...seedRevision,
+      id: revisionId,
+      masterId: source.id,
+      anchors: seedRevision.anchors.map((item) => ({ ...item })),
+      inspectionROIs: seedRevision.inspectionROIs.map((item) => ({ ...item })),
+      referenceImages: seedRevision.referenceImages.map((item) => ({ ...item })),
+    }];
+    activeRevisionId = revisionId;
   } else {
-    const mergedReferenceImages = Array.from({ length: 8 }, (_, index) => {
-      const existingReference = sourceRevision.referenceImages?.[index];
-      const builtInReference = SEED_PRODUCT_A.revisions[0].referenceImages[index];
+    const needsImageDimensions =
+      !currentRevision.masterWidth || !currentRevision.masterHeight;
+    const resolvedMasterImageUrl =
+      currentRevision.masterImageUrl?.trim() || BUILT_IN_MASTER_IMAGE;
+    const nativeDimensions = needsImageDimensions
+      ? await getImageDimensions(resolvedMasterImageUrl)
+      : { width: currentRevision.masterWidth, height: currentRevision.masterHeight };
+
+    const isActiveExampleRevision = (revision: MasterRevision) =>
+      revision.id === currentRevision.id;
+
+    revisions = source.revisions.map((revision) => {
+      if (!isActiveExampleRevision(revision)) return revision;
+
+      const inspectionROIs = revision.inspectionROIs?.length
+        ? revision.inspectionROIs
+        : SEED_PRODUCT_A.revisions[0].inspectionROIs.map((item) => ({ ...item }));
+
+      const anchors = revision.anchors?.length
+        ? revision.anchors
+        : SEED_PRODUCT_A.revisions[0].anchors.map((item) => ({ ...item }));
+
+      // Built-in golden images are used only when the existing example has no
+      // references at all and still has the original eight screw ROIs. Partial
+      // or custom reference sets are left untouched.
+      const isEightScrewExample =
+        inspectionROIs.length === 8 &&
+        inspectionROIs.every((roi) => roi.objectType === 'screw');
+      const referenceImages = revision.referenceImages?.length
+        ? revision.referenceImages
+        : isEightScrewExample
+          ? SEED_PRODUCT_A.revisions[0].referenceImages.map((item, index) => ({
+              ...item,
+              roiId: inspectionROIs[index]?.id || item.roiId,
+            }))
+          : [];
+
       return {
-        ...(builtInReference || {}),
-        ...(existingReference || {}),
-        imageUrl: existingReference?.imageUrl?.trim() || builtInReference.imageUrl,
+        ...revision,
+        masterId: source.id,
+        masterImageUrl: resolvedMasterImageUrl,
+        masterWidth: nativeDimensions.width || revision.masterWidth || 0,
+        masterHeight: nativeDimensions.height || revision.masterHeight || 0,
+        inspectionROIs,
+        anchors,
+        referenceImages,
+        expectedObjectCount: Number.isInteger(revision.expectedObjectCount) &&
+          revision.expectedObjectCount > 0
+          ? revision.expectedObjectCount
+          : inspectionROIs.filter((roi) => roi.isRequired).length,
+        detectionZone: revision.detectionZone || SEED_PRODUCT_A.revisions[0].detectionZone,
+        tolerance: revision.tolerance || SEED_PRODUCT_A.revisions[0].tolerance,
       };
     });
-
-    const resolvedMasterImageUrl =
-      sourceRevision.masterImageUrl?.trim() || BUILT_IN_MASTER_IMAGE;
-
-    const nativeDimensions = await getImageDimensions(resolvedMasterImageUrl);
-
-  const canonical: MasterProduct = {
-      ...source,
-      id: SEED_PRODUCT_A.id,
-      productCode: SEED_PRODUCT_A.productCode,
-      productName: SEED_PRODUCT_A.productName,
-      activeRevisionId: 'rev-01-8screw',
-      revisions: [{
-        ...sourceRevision,
-        id: 'rev-01-8screw',
-        masterId: SEED_PRODUCT_A.id,
-        revisionCode: 'REV-01',
-        expectedObjectCount: 8,
-        masterImageUrl: resolvedMasterImageUrl,
-        // Always trust the uploaded image's native dimensions. This migrates
-        // old 800x600 masters without touching normalized ROI/anchor values.
-        masterWidth: nativeDimensions.width || sourceRevision.masterWidth || 0,
-        masterHeight: nativeDimensions.height || sourceRevision.masterHeight || 0,
-        inspectionROIs:
-          sourceRevision.inspectionROIs?.length === 8
-            ? sourceRevision.inspectionROIs
-            : SEED_PRODUCT_A.revisions[0].inspectionROIs,
-        anchors:
-          sourceRevision.anchors?.length === 4
-            ? sourceRevision.anchors
-            : SEED_PRODUCT_A.revisions[0].anchors,
-        referenceImages: mergedReferenceImages,
-      }],
-      updatedAt: new Date().toISOString(),
-    };
-
-    await dbService.saveMaster(canonical);
   }
 
-  // Do not delete any other master records during seed initialization.
-  // User-created products are independent production configurations.
+  const updatedMaster: MasterProduct = {
+    ...source,
+    // Preserve product ID, metadata, revision IDs, and historical revisions.
+    activeRevisionId,
+    revisions,
+  };
+
+  if (JSON.stringify(updatedMaster) !== JSON.stringify(source)) {
+    await dbService.saveMaster(updatedMaster);
+  }
+
+  // Do not delete, rename, or rewrite any other master records during seeding.
 }
