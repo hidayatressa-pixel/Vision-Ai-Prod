@@ -10,6 +10,8 @@ import {
   Crosshair,
   Images,
   Upload,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { InspectionROI, MasterProduct, MasterRevision } from '../../types/master';
 import { dbService } from '../../services/db';
@@ -294,21 +296,18 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
     const tolerance = editedRevision.tolerance;
     const errors: string[] = [];
     if (editedRevision.anchors.length !== 4) errors.push('Exactly 4 alignment anchors are required.');
-    if (editedRevision.inspectionROIs.length !== 8) errors.push('Exactly 8 screw inspection ROIs are required.');
+    if (editedRevision.inspectionROIs.length < 1) errors.push('At least one inspection ROI is required.');
     if (!editedRevision.masterImageUrl || !editedRevision.masterImageUrl.trim()) errors.push('A master image is required.');
     if (editedRevision.masterWidth <= 0 || editedRevision.masterHeight <= 0) errors.push('Master dimensions are invalid. Re-upload the approved master image so its native resolution can be captured.');
     const references = editedRevision.referenceImages || [];
-    if (references.length !== 8) {
-      errors.push(`Exactly 8 master reference images are required (${references.length}/8 configured).`);
-    }
-    if (references.some((reference) => !reference.imageUrl || !reference.imageUrl.trim())) {
-      errors.push('All 8 master reference images must contain a valid image.');
+    if (references.some((reference) => reference.imageUrl && !reference.imageUrl.trim())) {
+      errors.push('Reference images must contain valid image data when configured.');
     }
     if (new Set(references.map((reference) => reference.id)).size !== references.length) {
       errors.push('Master reference IDs must be unique.');
     }
-    if (editedRevision.expectedObjectCount !== 8 || editedRevision.expectedObjectCount !== editedRevision.inspectionROIs.length) {
-      errors.push('Expected object count must match the number of inspection ROIs.');
+    if (editedRevision.expectedObjectCount !== editedRevision.inspectionROIs.filter((roi) => roi.isRequired).length) {
+      errors.push('Expected object count must match the number of required inspection ROIs.');
     }
     if (tolerance.maxPositionOffsetPx <= 0 || tolerance.maxPositionOffsetMm <= 0) {
       errors.push('Position tolerances must be greater than zero.');
@@ -520,11 +519,22 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
 
             {activeTab === 'VISUAL' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono uppercase tracking-wider text-slate-400">
-                    Inspection Screws
-                  </span>
-                  <span className="text-[10px] font-mono text-cyan-300">8 required</span>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Inspection Components</span>
+                    <div className="mt-1 text-[10px] font-mono text-cyan-300">{editedRevision.inspectionROIs.filter((roi) => roi.isRequired).length} required · Zone {editedRevision.focusZone || 'A'}</div>
+                  </div>
+                  <button type="button" onClick={() => {
+                    const index = editedRevision.inspectionROIs.length + 1;
+                    const roi: InspectionROI = {
+                      id: `roi-${Date.now()}`, name: `Component #${index}`, objectType: 'component',
+                      objectClass: 'component', focusZone: editedRevision.focusZone || 'A',
+                      x: 0.5, y: 0.5, radius: 0.04, toleranceRadius: 0.035,
+                      minConfidence: 0.65, isRequired: true,
+                    };
+                    setEditedRevision((prev) => ({ ...prev, inspectionROIs: [...prev.inspectionROIs, roi], expectedObjectCount: prev.inspectionROIs.filter((item) => item.isRequired).length + 1 }));
+                    setSelectedId(roi.id); setSelectedItemType('ROI');
+                  }} className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20"><Plus className="h-3 w-3" /> Add ROI</button>
                 </div>
 
                 {selectedReference && (
@@ -565,23 +575,27 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                             : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <input
-                            type="text"
-                            value={roi.name}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditedRevision((prev) => ({
-                                ...prev,
-                                inspectionROIs: prev.inspectionROIs.map((r) =>
-                                  r.id === roi.id ? { ...r, name: val } : r
-                                ),
-                              }));
-                            }}
-                            className="bg-transparent font-bold text-white font-mono focus:outline-none focus:border-b border-cyan-400"
-                          />
-
+                        <div className="mb-2 flex items-center gap-2">
+                          <input type="text" value={roi.name} onChange={(e) => {
+                            const val = e.target.value;
+                            setEditedRevision((prev) => ({ ...prev, inspectionROIs: prev.inspectionROIs.map((r) => r.id === roi.id ? { ...r, name: val } : r) }));
+                          }} className="min-w-0 flex-1 bg-transparent font-bold text-white font-mono focus:outline-none focus:border-b border-cyan-400" aria-label="ROI name" />
+                          <button type="button" title="Remove ROI" onClick={(e) => {
+                            e.stopPropagation();
+                            setEditedRevision((prev) => {
+                              const inspectionROIs = prev.inspectionROIs.filter((r) => r.id !== roi.id);
+                              return { ...prev, inspectionROIs, expectedObjectCount: inspectionROIs.filter((item) => item.isRequired).length, referenceImages: (prev.referenceImages || []).filter((reference) => reference.roiId !== roi.id) };
+                            });
+                            if (selectedId === roi.id) setSelectedId('');
+                          }} className="rounded-md p-1 text-slate-500 hover:bg-red-950 hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
+                        <label className="mb-2 block text-[10px] text-slate-500">YOLO class / component type</label>
+                        <input type="text" value={roi.objectClass || roi.objectType} onChange={(e) => {
+                          const objectClass = e.target.value;
+                          const normalized = objectClass.trim().toLowerCase();
+                          const objectType = ['screw', 'bolt', 'fastener'].includes(normalized) ? 'screw' : ['connector', 'clip', 'label'].includes(normalized) ? normalized : 'component';
+                          setEditedRevision((prev) => ({ ...prev, inspectionROIs: prev.inspectionROIs.map((r) => r.id === roi.id ? { ...r, objectClass, objectType } : r) }));
+                        }} className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-cyan-200 outline-none focus:border-cyan-400" />
 
                         <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
                           <div>Pos X: {(roi.x * 100).toFixed(1)}%</div>
