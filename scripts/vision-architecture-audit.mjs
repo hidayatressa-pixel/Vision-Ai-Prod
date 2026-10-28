@@ -70,7 +70,7 @@ check(
 check(
   'Example seeding preserves existing master revisions',
   seed.includes('Preserve product ID, metadata, revision IDs, and historical revisions') &&
-    seed.includes('revisions: source.revisions') &&
+    seed.includes('let revisions = source.revisions;') &&
     !seed.includes('dbService.deleteMaster('),
   'Seed initialization must not delete masters or collapse revision history.'
 );
