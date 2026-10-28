@@ -20,6 +20,8 @@ const pipeline = read('../src/hooks/useInspectionPipeline.ts');
 const db = read('../src/services/db.ts');
 const seed = read('../src/services/sampleData.ts');
 const internalAdapter = read('../src/services/storage/InternalServerStorageAdapter.ts');
+const storageConfig = read('../src/services/storage/storageConfig.ts');
+const localServer = read('../server/local-storage-server.mjs');
 const storageSettings = read('../src/components/settings/StorageServerSettings.tsx');
 const settingsView = read('../src/components/settings/SettingsView.tsx');
 const app = read('../src/App.tsx');
@@ -106,21 +108,48 @@ check(
 );
 
 check(
-  'Internal server adapter remains a no-network stub',
-  internalAdapter.includes('No network requests are made') &&
-    !/\bfetch\s*\(/.test(internalAdapter),
-  'Do not guess the company API endpoint or send unapproved requests.'
+  'Internal server adapter performs authenticated runtime reads and writes',
+  internalAdapter.includes('Authorization: \`Bearer \${config.accessToken}\`') &&
+    internalAdapter.includes("this.request('/masters'") &&
+    internalAdapter.includes("this.request('/inspections'") &&
+    internalAdapter.includes('Read access is disabled') &&
+    internalAdapter.includes('Write access is disabled'),
+  'Server-mode storage must enforce configured access controls and send authenticated requests.'
 );
 
 check(
-  'Storage target menu does not pretend the internal server is active',
-  storageSettings.includes('STORAGE_CONFIG_KEY') &&
-    storageSettings.includes('Active persistence: IndexedDB (this station)') &&
-    storageSettings.includes('Save configuration draft') &&
-    !/\\bfetch\\s*\\(/.test(storageSettings) &&
+  'Storage settings test, activate, and migrate the selected backend',
+  storageSettings.includes('Test connection') &&
+    storageSettings.includes('Migrate local data & activate') &&
+    storageSettings.includes('Activate without migration') &&
+    storageSettings.includes('Activate Local Station') &&
     settingsView.includes("tab: 'STORAGE_SETUP'") &&
     app.includes('<StorageServerSettings'),
-  'The UI may save a server profile, but must keep IndexedDB active until the approved internal API adapter is implemented.'
+  'Backend selection must be explicit, test connectivity, and retain local data during migration.'
+);
+
+check(
+  'Local API requires a token and protects migration conflicts',
+  localServer.includes('VISION_SERVER_TOKEN') &&
+    localServer.includes('timingSafeEqual') &&
+    localServer.includes('mergeMigrationRecords') &&
+    localServer.includes('Existing server data was not overwritten') &&
+    localServer.includes('await updateStore'),
+  'The server must authenticate requests, serialize writes, and refuse conflicting migration records.'
+);
+
+check(
+  'Legacy server drafts cannot silently switch the active backend',
+  storageConfig.includes('parsed.configVersion === 2') &&
+    storageConfig.includes("target: 'local'"),
+  'Older draft-only preferences must continue to use local IndexedDB until explicitly activated.'
+);
+
+check(
+  'Local storage server scripts are registered',
+  packageJson.scripts['server:local'] === 'node server/local-storage-server.mjs' &&
+    packageJson.scripts['check:server'] === 'node --check server/local-storage-server.mjs',
+  'The internal API must be runnable and syntax-checkable using documented npm scripts.'
 );
 
 check(
@@ -137,6 +166,6 @@ check(
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 14);
+assert.equal(checks.length, 18);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
