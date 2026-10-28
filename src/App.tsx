@@ -13,6 +13,7 @@ import { InspectionHistoryView } from './components/history/InspectionHistoryVie
 import { DiagnosticsModal } from './components/diagnostics/DiagnosticsModal';
 import { LiveInspectionView } from './components/operator/LiveInspectionView';
 import { SettingsView } from './components/settings/SettingsView';
+import { StorageServerSettings } from './components/settings/StorageServerSettings';
 import { WelcomeScreen } from './components/auth/WelcomeScreen';
 import { useCamera } from './hooks/useCamera';
 import { useInspectionPipeline } from './hooks/useInspectionPipeline';
@@ -191,6 +192,7 @@ export default function App() {
         {activeTab === 'INSPECTION' && <LiveInspectionView videoRef={camera.videoRef} canvasRef={camera.canvasRef} cameraState={camera.cameraState} errorMessage={camera.errorMessage} fps={camera.fps} videoDimensions={camera.videoDimensions} state={pipeline.state} stabilizationProgress={pipeline.stabilizationProgress} motionDelta={pipeline.motionDelta} currentResult={pipeline.currentResult} latestAlignment={pipeline.latestAlignment} latestRoiResults={pipeline.latestRoiResults} latestExtraObjects={pipeline.latestExtraObjects} stats={pipeline.stats} liveMetrics={pipeline.liveMetrics} plcHandshake={pipeline.plcHandshake} plcSignals={pipeline.plcSignals} activeMaster={activeMaster} activeRevision={activeRevision} role={role} isVirtualMode={camera.isVirtualMode} virtualScenario={camera.virtualScenario} setVirtualScenario={camera.setVirtualScenario} enableVirtualMode={camera.enableVirtualMode} enablePhysicalCamera={camera.enablePhysicalCamera} calibrateBackground={pipeline.calibrateBackground} onOpenHistory={() => setActiveTab('HISTORY')} onOpenPlcConfig={() => handleNavigate('SETTINGS')} onEndSession={handleEndSession} onStartSession={handleStartSession} canEndSession={pipeline.canEndSession} sessionActive={sessionActive} />}
         {activeTab === 'HISTORY' && <InspectionHistoryView onRefreshStats={loadMasters} />}
         {activeTab === 'SETTINGS' && <SettingsView onNavigate={setActiveTab} onClose={() => setActiveTab('INSPECTION')} />}
+        {activeTab === 'STORAGE_SETUP' && <StorageServerSettings onBack={() => setActiveTab('SETTINGS')} />}
         {activeTab === 'MASTERS' && <MasterManager masters={masters} activeMaster={activeMaster} activeRevision={activeRevision} onSelectMaster={handleSelectMaster} onRefreshMasters={loadMasters} onOpenSetupModal={handleOpenSetupModal} onCreateNewMaster={handleCreateNewMaster} />}
         {activeTab === 'CAMERA_SETUP' && <CameraCalibrationView devices={camera.devices} selectedDeviceId={camera.selectedDeviceId} setSelectedDeviceId={camera.setSelectedDeviceId} sourceMode={cameraSourceMode} setSourceMode={setCameraSourceMode} cameraState={camera.cameraState} remotePeerId={remotePeerId} remoteStatus={remoteStatus} phoneCameraUrl={phoneCameraUrl} videoRef={camera.videoRef} fps={camera.fps} videoDimensions={camera.videoDimensions} captureFrame={camera.captureFrame} calibrateBackground={pipeline.calibrateBackground} onSwitchToStandSimulator={() => camera.enableVirtualMode('PERFECT_PASS')} />}
         {activeTab === 'PLC_SETUP' && <PLCConfigurationView />}
