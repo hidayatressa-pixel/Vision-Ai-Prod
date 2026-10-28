@@ -180,3 +180,14 @@ Before line use:
 - `public/master-images` — reserved for approved master assets supplied during commissioning
 
 This repository intentionally contains no bundled production reference imagery until the approved master asset is committed during commissioning.
+
+## Dynamic product master setup
+
+The Master Setup entry screen offers two workflows:
+
+- **Example Master** opens the existing Reflector Assy HL GJRA example with its eight screw ROIs and reference images. It does not reset or overwrite the example.
+- **New Product** registers a product name and part number, selects focus zone A/B/C, sets the model class name, and defines the expected component quantity. The new master starts with a fresh ROI list and no inherited golden-reference images.
+
+The selected quantity creates that many provisional ROI points. Upload the approved master image, drag each ROI to the real part location, and add a golden reference to every required screw ROI before trial use. The quantity must match the number of required ROIs. The example master remains an example; new products are stored independently.
+
+YOLO class matching uses the labels configured in `VITE_YOLO_CLASS_NAMES`, in the same order as the trained model's output classes. Entering a new class name in Master Setup does not train the model. A custom class must already exist in the deployed model. Non-screw ROIs require class-aware YOLO confirmation; the final judgement remains with the deterministic rule engine.
