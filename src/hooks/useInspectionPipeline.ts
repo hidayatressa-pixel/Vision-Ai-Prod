@@ -27,6 +27,7 @@ import { PresenceDetector } from '../vision/presenceDetector';
 import { roiInspector } from '../vision/roiInspector';
 import { ruleEngine } from '../vision/ruleEngine';
 import { preprocessInspectionFrame } from '../vision/opencvEngine';
+import { applyYoloSupportingEvidence, yoloEngine } from '../vision/yoloEngine';
 
 export interface UseInspectionPipelineProps {
   activeMaster: MasterProduct | null;
@@ -292,6 +293,27 @@ export function useInspectionPipeline({
           );
           roiResults = inspection.roiResults;
           extraObjects = inspection.extraObjects;
+
+          // Optional YOLO evidence can recover only a required screw ROI that
+          // classical inspection marked ABSENT/UNCERTAIN. It cannot change
+          // alignment or bypass the deterministic rule engine.
+          if (yoloEngine.isConfigured()) {
+            try {
+              const yoloDetections = await yoloEngine.detect(candidateFrame);
+              roiResults = applyYoloSupportingEvidence(
+                roiResults,
+                yoloDetections,
+                revision.inspectionROIs,
+                revision.tolerance,
+                candidateFrame.width,
+                candidateFrame.height
+              );
+            } catch (yoloError) {
+              // The existing OpenCV/RVI path remains available if the optional
+              // model is missing, incompatible, or cannot initialize.
+              console.warn('[VisionPipeline] Optional YOLO stage unavailable; using classical ROI evidence:', yoloError);
+            }
+          }
           roiMs = performance.now() - roiStart;
         }
 
