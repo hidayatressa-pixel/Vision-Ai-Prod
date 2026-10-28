@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - Vision-AI-Prod
+      - refactor/local-first-perception
   pull_request:
     branches:
       - main
       - Vision-AI-Prod
+      - refactor/local-first-perception
 
 permissions:
   contents: read
