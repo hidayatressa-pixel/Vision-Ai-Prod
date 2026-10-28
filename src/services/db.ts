@@ -1,10 +1,10 @@
 /**
  * Persistence service for Vision-AI.
  *
- * Master configuration is persisted in station-local IndexedDB. Inspection
- * history is cloud-first with a durable local outbox: records that cannot be
- * written to Supabase remain locally queued until a later sync succeeds.
- * No service-role key is ever used in the browser.
+ * Master configuration and inspection history are persisted in station-local
+ * IndexedDB first. Optional Supabase synchronization is explicitly opt-in.
+ * Legacy localStorage history is migrated without deleting it until the
+ * IndexedDB transaction has committed. No service-role key is used in-browser.
  */
 
 import { InspectionRecord, InspectionStats } from '../types/inspection';
@@ -14,9 +14,11 @@ const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL || '').replace(/\/$/, ''
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 const HISTORY_TABLE = 'inspection_history';
 const MASTER_DB_NAME = 'vision-ai-station';
-const MASTER_DB_VERSION = 1;
+const MASTER_DB_VERSION = 2;
 const MASTER_STORE = 'masters';
+const HISTORY_STORE = 'inspection-history';
 const LOCAL_HISTORY_KEY = 'vision-ai-inspection-history';
+const CLOUD_SYNC_ENABLED = import.meta.env.VITE_ENABLE_SUPABASE_SYNC === 'true';
 
 class DatabaseService {
   private masterDbPromise: Promise<IDBDatabase> | null = null;
@@ -64,6 +66,9 @@ class DatabaseService {
           const database = request.result;
           if (!database.objectStoreNames.contains(MASTER_STORE)) {
             database.createObjectStore(MASTER_STORE, { keyPath: 'id' });
+          }
+          if (!database.objectStoreNames.contains(HISTORY_STORE)) {
+            database.createObjectStore(HISTORY_STORE, { keyPath: 'id' });
           }
         };
         request.onsuccess = () => resolve(request.result);
@@ -120,50 +125,74 @@ class DatabaseService {
     });
   }
 
-  // --- Durable local outbox for cloud inspection history ---
-  private getLocalHistory(): InspectionRecord[] {
+  // --- IndexedDB-first inspection history with safe legacy migration ---
+  private async getLocalHistory(): Promise<InspectionRecord[]> {
+    const database = await this.openMasterDb();
+    const legacyRecords = this.readLegacyLocalHistory();
+    return new Promise((resolve, reject) => {
+      const transaction = database.transaction(HISTORY_STORE, 'readwrite');
+      const store = transaction.objectStore(HISTORY_STORE);
+      const getRequest = store.getAll();
+      let records: InspectionRecord[] = [];
+      getRequest.onsuccess = () => {
+        const merged = new Map<string, InspectionRecord>();
+        for (const record of (getRequest.result as InspectionRecord[])) merged.set(record.id, record);
+        // Preserve the legacy queue's pending state. Existing IndexedDB records
+        // win when IDs collide because they are the newer durable source.
+        for (const record of legacyRecords) if (!merged.has(record.id)) merged.set(record.id, record);
+        records = Array.from(merged.values());
+        for (const record of records) store.put(record);
+      };
+      transaction.oncomplete = () => {
+        // Remove legacy data only after IndexedDB confirms the migration commit.
+        if (legacyRecords.length) {
+          try { localStorage.removeItem(LOCAL_HISTORY_KEY); } catch { /* retain source if storage is unavailable */ }
+        }
+        resolve(records.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+      };
+      transaction.onerror = () => reject(transaction.error || new Error('Unable to read local inspection history.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Local inspection history migration was aborted.'));
+    });
+  }
+
+  private readLegacyLocalHistory(): InspectionRecord[] {
     try {
+      if (typeof localStorage === 'undefined') return [];
       const raw = localStorage.getItem(LOCAL_HISTORY_KEY);
       if (!raw) return [];
       const parsed: unknown = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed as InspectionRecord[] : [];
     } catch {
+      // Do not erase malformed legacy data automatically; preserve it for recovery.
       return [];
     }
   }
 
-  private writeLocalHistory(records: InspectionRecord[]): void {
-    // Prioritize pending records so a long outage does not evict the outbox
-    // in favor of newer, already-synced history. Refuse to overwrite pending
-    // records if the outbox itself exceeds its safety bound.
-    const ordered = [...records].sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    const pending = ordered.filter((record) => !record.syncedToCloud);
-    if (pending.length > 5000) {
-      throw new Error('Pending inspection outbox exceeds 5,000 records; restore cloud connectivity before recording more inspections.');
-    }
-    const retained = [...pending, ...ordered.filter((record) => record.syncedToCloud)]
-      .slice(0, 5000)
-      .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    try {
-      localStorage.setItem(LOCAL_HISTORY_KEY, JSON.stringify(retained));
-    } catch (error) {
-      console.error('[DatabaseService] Local history/outbox write failed:', error);
-      throw new Error('Local inspection history could not be saved. Check browser storage capacity before continuing.');
-    }
+  private async writeLocalHistory(records: InspectionRecord[]): Promise<void> {
+    const database = await this.openMasterDb();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(HISTORY_STORE, 'readwrite');
+      const store = transaction.objectStore(HISTORY_STORE);
+      for (const record of records) store.put(record);
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Unable to save local inspection history.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Local history write was aborted.'));
+    });
   }
 
-  private saveLocalHistory(record: InspectionRecord): void {
-    const existing = this.getLocalHistory().filter((item) => item.id !== record.id);
-    this.writeLocalHistory([{ ...record, syncedToCloud: false }, ...existing]);
+  private async saveLocalHistory(record: InspectionRecord): Promise<void> {
+    await this.writeLocalHistory([{ ...record, syncedToCloud: false }]);
   }
 
-  private removeLocalHistoryRecord(id: string): void {
-    this.writeLocalHistory(this.getLocalHistory().filter((item) => item.id !== id));
+  private async removeLocalHistoryRecord(id: string): Promise<void> {
+    const records = await this.getLocalHistory();
+    const record = records.find((item) => item.id === id);
+    if (record) await this.writeLocalHistory([{ ...record, syncedToCloud: true }]);
   }
 
   private mergeHistory(cloud: InspectionRecord[], local: InspectionRecord[]): InspectionRecord[] {
     const merged = new Map<string, InspectionRecord>();
-    [...local, ...cloud].forEach((record) => merged.set(record.id, record));
+    [...cloud, ...local].forEach((record) => merged.set(record.id, record));
     return Array.from(merged.values()).sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
@@ -227,32 +256,41 @@ class DatabaseService {
   }
 
   public async saveInspectionRecord(record: InspectionRecord): Promise<void> {
+    // Local persistence is authoritative for the station: never require a
+    // cloud round-trip before the inspection result is safely recorded.
+    const localRecord = { ...record, syncedToCloud: false };
+    await this.saveLocalHistory(localRecord);
+
+    if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) return;
     try {
       await this.request('', {
         method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify(this.toCloudRecord(record)),
+        body: JSON.stringify(this.toCloudRecord(localRecord)),
       });
-      this.removeLocalHistoryRecord(record.id);
+      await this.removeLocalHistoryRecord(record.id);
     } catch (error) {
-      this.saveLocalHistory(record);
-      console.warn('[DatabaseService] Cloud history queued locally for retry:', error);
+      console.warn('[DatabaseService] Local inspection saved; cloud sync remains pending:', error);
     }
   }
 
   public async getRecentInspections(limit = 500): Promise<InspectionRecord[]> {
     const safeLimit = Math.max(1, Math.min(limit, 5000));
-    const local = this.getLocalHistory();
-    if (!SUPABASE_URL || !SUPABASE_KEY) return local.slice(0, safeLimit);
+    const local = await this.getLocalHistory();
+    if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) {
+      return local.slice(0, safeLimit);
+    }
 
-    // Reading history is also a safe retry point for records saved while offline.
     void this.flushSyncQueue();
-
     try {
       const rows = await this.request<any[]>(`?select=*&order=timestamp.desc&limit=${safeLimit}`);
-      return this.mergeHistory(rows.map((row) => this.fromCloudRecord(row)), local).slice(0, safeLimit);
+      const cloud = rows.map((row) => this.fromCloudRecord(row));
+      const merged = this.mergeHistory(cloud, local);
+      // Cache cloud history locally so the station remains usable offline.
+      await this.writeLocalHistory(merged);
+      return merged.slice(0, safeLimit);
     } catch (error) {
-      console.warn('[DatabaseService] Cloud history read failed; using local history:', error);
+      console.warn('[DatabaseService] Cloud history read failed; using IndexedDB history:', error);
       return local.slice(0, safeLimit);
     }
   }
@@ -310,24 +348,30 @@ class DatabaseService {
   }
 
   public async clearInspectionHistory(): Promise<void> {
-    this.writeLocalHistory([]);
-    if (!SUPABASE_URL || !SUPABASE_KEY) return;
-    await this.request('?id=not.is.null', {
-      method: 'DELETE',
-      headers: { Prefer: 'return=minimal' },
+    const database = await this.openMasterDb();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(HISTORY_STORE, 'readwrite');
+      transaction.objectStore(HISTORY_STORE).clear();
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error || new Error('Unable to clear local inspection history.'));
+      transaction.onabort = () => reject(transaction.error || new Error('Clearing local inspection history was aborted.'));
     });
+    try { localStorage.removeItem(LOCAL_HISTORY_KEY); } catch { /* ignore unavailable storage */ }
+    if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) return;
+    await this.request('?id=not.is.null', { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   }
 
   public async getPendingSyncCount(): Promise<number> {
-    return this.getLocalHistory().filter((record) => !record.syncedToCloud).length;
+    if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) return 0;
+    return (await this.getLocalHistory()).filter((record) => !record.syncedToCloud).length;
   }
 
   public async flushSyncQueue(): Promise<{ synced: number }> {
-    if (!SUPABASE_URL || !SUPABASE_KEY) return { synced: 0 };
+    if (!CLOUD_SYNC_ENABLED || !SUPABASE_URL || !SUPABASE_KEY) return { synced: 0 };
     if (this.syncPromise) return this.syncPromise;
 
     this.syncPromise = (async () => {
-      const pending = this.getLocalHistory().filter((record) => !record.syncedToCloud);
+      const pending = (await this.getLocalHistory()).filter((record) => !record.syncedToCloud);
       let synced = 0;
       for (const record of pending) {
         try {
@@ -336,23 +380,23 @@ class DatabaseService {
             headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
             body: JSON.stringify(this.toCloudRecord(record)),
           });
-          this.removeLocalHistoryRecord(record.id);
+          await this.removeLocalHistoryRecord(record.id);
           synced++;
         } catch (error) {
-          // Stop at the first failed write; remaining records stay queued.
-          console.warn('[DatabaseService] Outbox sync paused; records remain queued:', error);
+          console.warn('[DatabaseService] Sync paused; records remain safely stored in IndexedDB:', error);
           break;
         }
       }
       return { synced };
     })();
 
-    try {
-      return await this.syncPromise;
-    } finally {
-      this.syncPromise = null;
-    }
+    try { return await this.syncPromise; }
+    finally { this.syncPromise = null; }
   }
+}
+
+export const dbService = new DatabaseService();
+
 }
 
 export const dbService = new DatabaseService();
