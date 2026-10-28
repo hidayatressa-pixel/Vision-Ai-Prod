@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 
 const HOST = process.env.VISION_SERVER_HOST || '0.0.0.0';
 const PORT = Number(process.env.VISION_SERVER_PORT || 8787);
@@ -17,6 +17,7 @@ if (ACCESS_TOKEN.length < 32) {
 
 let store = { schemaVersion: 1, masters: [], inspections: [], updatedAt: new Date().toISOString() };
 let writeQueue = Promise.resolve();
+let mutationQueue = Promise.resolve();
 
 async function loadStore() {
   try {
@@ -40,6 +41,17 @@ async function persistStore(nextStore) {
     await rename(temporary, DATA_FILE);
   });
   await writeQueue;
+}
+
+async function updateStore(mutator) {
+  const operation = mutationQueue.then(async () => {
+    const next = mutator(store);
+    await persistStore(next);
+    store = next;
+    return next;
+  });
+  mutationQueue = operation.catch(() => {});
+  return operation;
 }
 
 function equalToken(candidate) {
@@ -77,6 +89,25 @@ function upsertById(existing, incoming) {
   return Array.from(map.values());
 }
 
+function mergeMigrationRecords(existing, incoming) {
+  const existingById = new Map(existing.map((item) => [item.id, item]));
+  const additions = [];
+  for (const item of incoming) {
+    if (!item || typeof item.id !== 'string' || !item.id.trim()) {
+      throw Object.assign(new Error('Every migrated record must have a non-empty string id.'), { statusCode: 400 });
+    }
+    const current = existingById.get(item.id);
+    if (current && JSON.stringify(current) !== JSON.stringify(item)) {
+      throw Object.assign(new Error(`Migration conflict for id "${item.id}". Existing server data was not overwritten.`), { statusCode: 409 });
+    }
+    if (!current) {
+      existingById.set(item.id, item);
+      additions.push(item);
+    }
+  }
+  return [...existing, ...additions];
+}
+
 const server = createServer(async (req, res) => {
   const origin = req.headers.origin;
   if (origin && ALLOWED_ORIGINS.has(origin)) {
@@ -110,14 +141,12 @@ const server = createServer(async (req, res) => {
     if (path === '/masters' && req.method === 'POST') {
       const master = await readJson(req);
       if (!master || typeof master.id !== 'string' || !master.id.trim()) { send(res, 400, { error: 'Master id is required.' }); return; }
-      const next = { ...store, masters: upsertById(store.masters, [master]) };
-      await persistStore(next); store = next;
+      await updateStore((current) => ({ ...current, masters: upsertById(current.masters, [master]) }));
       send(res, 200, { ok: true }); return;
     }
     if (path.startsWith('/masters/') && req.method === 'DELETE') {
       const id = decodeURIComponent(path.slice('/masters/'.length));
-      const next = { ...store, masters: store.masters.filter((master) => master.id !== id) };
-      await persistStore(next); store = next;
+      await updateStore((current) => ({ ...current, masters: current.masters.filter((master) => master.id !== id) }));
       send(res, 204); return;
     }
     if (path === '/inspections' && req.method === 'GET') {
@@ -127,13 +156,11 @@ const server = createServer(async (req, res) => {
     if (path === '/inspections' && req.method === 'POST') {
       const record = await readJson(req);
       if (!record || typeof record.id !== 'string' || !record.id.trim()) { send(res, 400, { error: 'Inspection id is required.' }); return; }
-      const next = { ...store, inspections: upsertById(store.inspections, [record]) };
-      await persistStore(next); store = next;
+      await updateStore((current) => ({ ...current, inspections: upsertById(current.inspections, [record]) }));
       send(res, 200, { ok: true }); return;
     }
     if (path === '/inspections' && req.method === 'DELETE') {
-      const next = { ...store, inspections: [] };
-      await persistStore(next); store = next;
+      await updateStore((current) => ({ ...current, inspections: [] }));
       send(res, 204); return;
     }
     if (path === '/migrate' && req.method === 'POST') {
@@ -141,12 +168,11 @@ const server = createServer(async (req, res) => {
       if (!snapshot || !Array.isArray(snapshot.masters) || !Array.isArray(snapshot.inspections)) {
         send(res, 400, { error: 'Migration payload must contain masters and inspections arrays.' }); return;
       }
-      const next = {
-        ...store,
-        masters: upsertById(store.masters, snapshot.masters),
-        inspections: upsertById(store.inspections, snapshot.inspections),
-      };
-      await persistStore(next); store = next;
+      await updateStore((current) => ({
+        ...current,
+        masters: mergeMigrationRecords(current.masters, snapshot.masters),
+        inspections: mergeMigrationRecords(current.inspections, snapshot.inspections),
+      }));
       send(res, 200, { mastersImported: snapshot.masters.length, inspectionsImported: snapshot.inspections.length }); return;
     }
     send(res, 404, { error: 'Route not found.' });
