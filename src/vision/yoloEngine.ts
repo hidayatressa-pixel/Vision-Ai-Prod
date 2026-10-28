@@ -68,28 +68,58 @@ async function getSession(config: YoloConfig): Promise<ort.InferenceSession> {
   return sessionPromise;
 }
 
-function makeInput(frame: ImageData, size: number): Float32Array {
+interface LetterboxTransform {
+  scale: number;
+  padX: number;
+  padY: number;
+}
+
+/**
+ * Applies YOLO's standard aspect-ratio-preserving letterbox preprocessing.
+ * The transform is returned so model-space boxes can be mapped back to the
+ * original camera frame without coordinate drift.
+ */
+function makeInput(
+  frame: ImageData,
+  size: number
+): { data: Float32Array; transform: LetterboxTransform } {
+  if (frame.width <= 0 || frame.height <= 0) {
+    throw new Error('YOLO input frame has invalid dimensions.');
+  }
+
+  const scale = Math.min(size / frame.width, size / frame.height);
+  const resizedWidth = Math.max(1, Math.round(frame.width * scale));
+  const resizedHeight = Math.max(1, Math.round(frame.height * scale));
+  const padX = Math.floor((size - resizedWidth) / 2);
+  const padY = Math.floor((size - resizedHeight) / 2);
+
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
   const context = canvas.getContext('2d', { willReadFrequently: true });
   if (!context) throw new Error('Canvas 2D context is unavailable for YOLO preprocessing.');
+
   const source = document.createElement('canvas');
   source.width = frame.width;
   source.height = frame.height;
   const sourceContext = source.getContext('2d', { willReadFrequently: true });
   if (!sourceContext) throw new Error('Canvas 2D context is unavailable for YOLO input.');
+
   sourceContext.putImageData(frame, 0, 0);
-  context.drawImage(source, 0, 0, size, size);
+  context.fillStyle = 'rgb(114, 114, 114)';
+  context.fillRect(0, 0, size, size);
+  context.drawImage(source, padX, padY, resizedWidth, resizedHeight);
+
   const pixels = context.getImageData(0, 0, size, size).data;
   const plane = size * size;
-  const input = new Float32Array(3 * plane);
+  const data = new Float32Array(3 * plane);
   for (let i = 0; i < plane; i++) {
-    input[i] = pixels[i * 4] / 255;
-    input[plane + i] = pixels[i * 4 + 1] / 255;
-    input[2 * plane + i] = pixels[i * 4 + 2] / 255;
+    data[i] = pixels[i * 4] / 255;
+    data[plane + i] = pixels[i * 4 + 1] / 255;
+    data[2 * plane + i] = pixels[i * 4 + 2] / 255;
   }
-  return input;
+
+  return { data, transform: { scale, padX, padY } };
 }
 
 function intersectionOverUnion(a: YoloDetection, b: YoloDetection): number {
@@ -103,64 +133,75 @@ function intersectionOverUnion(a: YoloDetection, b: YoloDetection): number {
   return union > 0 ? intersection / union : 0;
 }
 
-/** Parses standard YOLOv8 detect output: [1, 4 + classes, candidates] or its transpose. */
+/** Parses standard YOLOv8 detect output and maps letterboxed boxes to frame coordinates. */
 function parseOutput(
   data: Float32Array,
   dims: readonly number[],
   frame: ImageData,
-  config: YoloConfig
+  config: YoloConfig,
+  transform: LetterboxTransform
 ): YoloDetection[] {
   if (dims.length !== 3 || dims[0] !== 1) {
     throw new Error(`Unsupported YOLO output shape: [${dims.join(', ')}]. Expected a batch-1 YOLOv8 detection tensor.`);
   }
+
   const channelFirst = dims[1] <= 256 && dims[2] > dims[1];
   const channels = channelFirst ? dims[1] : dims[2];
   const candidates = channelFirst ? dims[2] : dims[1];
-  if (channels < 5) throw new Error('YOLO output must contain box coordinates and at least one class score.');
+  if (channels < 5) {
+    throw new Error('YOLO output must contain box coordinates and at least one class score.');
+  }
 
   const at = (candidate: number, channel: number) =>
     channelFirst ? data[channel * candidates + candidate] : data[candidate * channels + channel];
+
   const results: YoloDetection[] = [];
-  const size = config.inputSize;
   for (let i = 0; i < candidates; i++) {
     let classId = 0;
     let confidence = -Infinity;
     for (let cls = 4; cls < channels; cls++) {
       const score = at(i, cls);
-      if (score > confidence) { confidence = score; classId = cls - 4; }
+      if (score > confidence) {
+        confidence = score;
+        classId = cls - 4;
+      }
     }
     if (!Number.isFinite(confidence) || confidence < config.confidenceThreshold) continue;
 
-    const cx = at(i, 0), cy = at(i, 1), width = Math.abs(at(i, 2)), height = Math.abs(at(i, 3));
+    const cx = at(i, 0);
+    const cy = at(i, 1);
+    const width = Math.abs(at(i, 2));
+    const height = Math.abs(at(i, 3));
     if (![cx, cy, width, height].every(Number.isFinite) || width <= 0 || height <= 0) continue;
+
+    // ONNX raw YOLOv8 coordinates are in letterboxed input pixels.
+    const centerX = (cx - transform.padX) / transform.scale;
+    const centerY = (cy - transform.padY) / transform.scale;
+    const boxWidth = width / transform.scale;
+    const boxHeight = height / transform.scale;
+
     results.push({
       classId,
       label: config.labels[classId] || `class-${classId}`,
       confidence,
-      x: Math.min(1, Math.max(0, cx / size)),
-      y: Math.min(1, Math.max(0, cy / size)),
-      width: Math.min(1, width / size),
-      height: Math.min(1, height / size),
+      x: Math.min(1, Math.max(0, centerX / frame.width)),
+      y: Math.min(1, Math.max(0, centerY / frame.height)),
+      width: Math.min(1, Math.max(0, boxWidth / frame.width)),
+      height: Math.min(1, Math.max(0, boxHeight / frame.height)),
     });
   }
 
   const selected: YoloDetection[] = [];
   results.sort((a, b) => b.confidence - a.confidence);
   for (const candidate of results) {
-    if (selected.some((kept) => kept.classId === candidate.classId &&
-      intersectionOverUnion(kept, candidate) > config.iouThreshold)) continue;
+    if (selected.some((kept) =>
+      kept.classId === candidate.classId &&
+      intersectionOverUnion(kept, candidate) > config.iouThreshold
+    )) continue;
     selected.push(candidate);
     if (selected.length >= 300) break;
   }
-  // Input is stretched to a square; remap normalized centers and box sizes to
-  // the original aspect ratio so downstream ROI comparisons use frame space.
-  return selected.map((item) => ({
-    ...item,
-    x: item.x,
-    y: item.y,
-    width: item.width * size / frame.width * frame.width / size,
-    height: item.height * size / frame.height * frame.height / size,
-  }));
+  return selected;
 }
 
 export const yoloEngine = {
@@ -174,15 +215,15 @@ export const yoloEngine = {
     const session = await getSession(config);
     const inputName = session.inputNames[0];
     if (!inputName) throw new Error('YOLO ONNX model has no input tensor.');
-    const input = makeInput(frame, config.inputSize);
-    const tensor = new ort.Tensor('float32', input, [1, 3, config.inputSize, config.inputSize]);
+    const prepared = makeInput(frame, config.inputSize);
+    const tensor = new ort.Tensor('float32', prepared.data, [1, 3, config.inputSize, config.inputSize]);
     const output = await session.run({ [inputName]: tensor });
     const outputName = session.outputNames[0];
     const result = outputName ? output[outputName] : undefined;
     if (!result || !(result instanceof ort.Tensor) || !(result.data instanceof Float32Array)) {
       throw new Error('YOLO ONNX output is missing or is not a float32 detection tensor.');
     }
-    return parseOutput(result.data, result.dims, frame, config);
+    return parseOutput(result.data, result.dims, frame, config, prepared.transform);
   },
 };
 
