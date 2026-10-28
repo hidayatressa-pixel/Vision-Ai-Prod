@@ -76,9 +76,8 @@ export const StorageServerSettings: React.FC<StorageServerSettingsProps> = ({ on
       if (!response.ok) throw new Error(`Server merespons HTTP ${response.status}. Periksa URL, token, dan konfigurasi CORS.`);
       const result = await response.json() as { ok?: boolean; service?: string; version?: string };
       if (!result.ok) throw new Error('Respons server tidak dikenali sebagai Vision local storage API.');
-      persistProfile(activeTarget);
       setConnection('connected');
-      setMessage(`Koneksi berhasil: ${result.service || 'Vision API'} v${result.version || 'unknown'}. Backend aktif belum berubah.`);
+      setMessage(`Koneksi berhasil: ${result.service || 'Vision API'} v${result.version || 'unknown'}. Profil belum mengubah backend aktif; gunakan tombol aktivasi untuk menerapkannya.`);
     } catch (caught) {
       setConnection('failed');
       setError(caught instanceof Error ? caught.message : 'Koneksi server gagal.');
@@ -155,8 +154,15 @@ export const StorageServerSettings: React.FC<StorageServerSettingsProps> = ({ on
 
   const saveAccessRules = () => {
     try {
-      persistProfile(activeTarget);
-      setMessage('Profil dan aturan akses tersimpan. Pengaturan berlaku pada operasi berikutnya.');
+      const current = readStorageConfig();
+      if (activeTarget === 'internal-server' &&
+          (normalizedEndpoint !== current.endpoint || draft.accessToken.trim() !== current.accessToken)) {
+        writeStorageConfig({ ...current, readEnabled: draft.readEnabled, writeEnabled: draft.writeEnabled });
+        setMessage('Aturan baca/tulis tersimpan. URL dan token backend aktif tidak diubah; gunakan aktivasi eksplisit untuk mengganti endpoint.');
+      } else {
+        persistProfile(activeTarget);
+        setMessage('Profil dan aturan akses tersimpan. Pengaturan berlaku pada operasi berikutnya.');
+      }
       setError('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Pengaturan tidak dapat disimpan.');
@@ -234,7 +240,7 @@ export const StorageServerSettings: React.FC<StorageServerSettingsProps> = ({ on
             <button disabled={connection !== 'connected' || busy} onClick={migrateAndActivate} className="inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-cyan-300 disabled:opacity-40"><UploadCloud className="h-4 w-4" /> {busy ? 'Migrating…' : 'Migrate local data & activate'}</button>
             <button disabled={connection !== 'connected' || busy} onClick={activateServerWithoutMigration} className="rounded-xl border border-amber-500/40 px-4 py-2.5 text-xs font-semibold text-amber-200 disabled:opacity-40">Activate without migration</button>
           </div>
-          <p className="text-[11px] leading-5 text-slate-500">Migrasi menggabungkan data berdasarkan ID, tidak menghapus IndexedDB, dan akan ditolak bila ditemukan ID yang sama dengan isi berbeda. Uji koneksi menyimpan profil tetapi tidak mengubah backend aktif.</p>
+          <p className="text-[11px] leading-5 text-slate-500">Migrasi menggabungkan data berdasarkan ID, tidak menghapus IndexedDB, dan akan ditolak bila ditemukan ID yang sama dengan isi berbeda. Uji koneksi tidak mengubah backend aktif; profil baru diterapkan saat aktivasi.</p>
         </div>
       )}
 
