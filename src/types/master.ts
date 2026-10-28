@@ -39,6 +39,10 @@ export interface InspectionROI {
   id: string;
   name: string;
   objectType: InspectionObjectType;
+  /** Human-readable model class, e.g. screw, clip, connector, or a trained custom class. */
+  objectClass?: string;
+  /** Named focus region selected during product registration. */
+  focusZone?: 'A' | 'B' | 'C';
   x: number;
   y: number;
   radius: number;
@@ -77,6 +81,7 @@ export interface MasterRevision {
   masterWidth: number;
   masterHeight: number;
   detectionZone: Box2D;
+  focusZone?: 'A' | 'B' | 'C';
   createdAt: string;
   updatedAt: string;
   createdBy: string;
