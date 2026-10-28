@@ -69,6 +69,15 @@ check(
 );
 
 check(
+  'Required ROI counts and abnormal-position counts are consistent',
+  rules.includes('const requiredROIs') &&
+    rules.includes('invalidRequiredCount') &&
+    rules.includes('presentRequiredCount++') &&
+    !rules.includes('presentScrewCount'),
+  'Only required ROIs affect expected counts; a shifted present component must not also be counted as missing.'
+);
+
+check(
   'IndexedDB is the local-first persistence layer',
   db.includes("indexedDB.open(MASTER_DB_NAME, MASTER_DB_VERSION)") &&
     db.includes('await this.saveLocalHistory(localRecord)') &&
@@ -97,6 +106,6 @@ check(
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 10);
+assert.equal(checks.length, 11);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
