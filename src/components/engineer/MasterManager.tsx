@@ -80,7 +80,7 @@ export const MasterManager: React.FC<MasterManagerProps> = ({
             <h2 className="text-xl font-bold text-white">Master Product Catalog & Versioning</h2>
           </div>
           <p className="text-xs text-slate-400 font-mono mt-1">
-            Manage reference masters, fiducial anchors, screw ROIs, and revision history.
+            Manage product masters, focus zones, component ROIs, and revision history.
           </p>
         </div>
 
@@ -168,7 +168,7 @@ export const MasterManager: React.FC<MasterManagerProps> = ({
                   <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-cyan-400">Master Image</div>
                   <div className="mt-1 text-sm font-bold text-white">Reference for vision alignment & inspection</div>
                   <p className="mt-2 text-xs leading-5 text-slate-400">
-                    The master image defines the approved layout and alignment reference. Anchors define alignment; screw ROIs define the eight required inspection locations.
+                    The master image defines the approved layout and alignment reference. Anchors define alignment; each ROI defines a required component class and inspection location.
                   </p>
                   {previewRevision && (
                     <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-mono">
@@ -176,7 +176,7 @@ export const MasterManager: React.FC<MasterManagerProps> = ({
                         {previewRevision.revisionCode}
                       </span>
                       <span className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-emerald-300">
-                        {previewRevision.expectedObjectCount} SCREWS
+                        {previewRevision.expectedObjectCount} COMPONENTS
                       </span>
                       <span className="rounded-lg border border-slate-700 bg-slate-900 px-2 py-1 text-slate-300">
                         {previewRevision.masterWidth}×{previewRevision.masterHeight}
@@ -307,7 +307,7 @@ export const MasterManager: React.FC<MasterManagerProps> = ({
                       {/* Specs Badge Strip */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 pt-3 border-t border-slate-800/80 text-xs font-mono">
                         <div>
-                          <span className="text-slate-500 text-[11px]">Screws Required:</span>
+                          <span className="text-slate-500 text-[11px]">Components Required:</span>
                           <div className="font-bold text-cyan-300">{rev.expectedObjectCount} pcs</div>
                         </div>
                         <div>
