@@ -129,7 +129,7 @@ CI runs TypeScript checking, the recognizer fixture audit, a source-contract arc
 
 ## Engineering configuration
 
-Settings are protected by a local engineering password. The engineering area provides:
+Engineering settings currently use a client-side PIN gate for demonstration/convenience only. Because the PIN check is shipped in browser code, it can be inspected or bypassed and is **not production authentication**. Do not expose the UI as a secured production station until managed authentication and controlled device/network access are implemented. The engineering area provides:
 
 - Master and revision management
 - Master image and reference-image upload
