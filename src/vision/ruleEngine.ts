@@ -64,7 +64,7 @@ export class RuleEngine {
       defects.push({
         code: 'MASTER_CONFIGURATION_INVALID',
         message: `Master configuration is not trial-safe: ${reason}`,
-        expected: 'Calibrated master image and golden reference for every required screw ROI',
+        expected: 'Calibrated master image and golden references for required screw ROIs',
         actual: 'Configuration incomplete',
       });
 
@@ -150,14 +150,14 @@ export class RuleEngine {
       if (totalDetected < expectedCount && !defects.some((d) => d.code === 'MISSING_PART')) {
         defects.push({
           code: 'INCORRECT_COUNT',
-          message: `Screw Count Mismatch: Expected ${expectedCount}, Detected ${totalDetected}`,
+          message: `Component count mismatch: expected ${expectedCount}, detected ${totalDetected}`,
           expected: expectedCount,
           actual: totalDetected,
         });
       } else if (totalDetected > expectedCount && !defects.some((d) => d.code === 'EXTRA_OBJECT_DETECTED')) {
         defects.push({
           code: 'EXTRA_OBJECT_DETECTED',
-          message: `Extra Screw Detected: Expected ${expectedCount}, Found ${totalDetected}`,
+          message: `Extra component detected: expected ${expectedCount}, found ${totalDetected}`,
           expected: expectedCount,
           actual: totalDetected,
         });
@@ -186,7 +186,7 @@ export class RuleEngine {
     if (defects.length === 0) {
       return {
         judgement: 'OK',
-        primaryReason: `All ${expectedCount}/${expectedCount} Screws Inspected OK (Tolerance Passed)`,
+        primaryReason: `All ${expectedCount}/${expectedCount} required components inspected OK (tolerance passed)`,
         defects: [],
         expectedCount,
         detectedCount: presentScrewCount,
