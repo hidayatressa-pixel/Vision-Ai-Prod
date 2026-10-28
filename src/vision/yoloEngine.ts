@@ -241,37 +241,82 @@ export function applyYoloSupportingEvidence(
   frameHeight: number
 ): ROIInspectionResult[] {
   if (frameWidth <= 0 || frameHeight <= 0) return results;
+
   const defaultScrewLabels = new Set(readConfig().screwClassNames);
   const frameScale = Math.min(frameWidth, frameHeight);
   const byId = new Map(rois.map((roi) => [roi.id, roi]));
 
-  return results.map((result) => {
+  type CandidatePair = {
+    resultIndex: number;
+    detectionIndex: number;
+    distancePx: number;
+    toleranceRadiusPx: number;
+  };
+
+  const pairs: CandidatePair[] = [];
+  results.forEach((result, resultIndex) => {
     const roi = byId.get(result.roiId);
-    if (!roi || !roi.isRequired) return result;
+    if (!roi?.isRequired) return;
 
     const expectedClass = (roi.objectClass || roi.objectType).trim().toLowerCase();
     const allowedLabels = new Set([expectedClass]);
     if (roi.objectType === 'screw' || defaultScrewLabels.has(expectedClass)) {
       defaultScrewLabels.forEach((label) => allowedLabels.add(label));
     }
-    const radiusPx = Math.max(roi.toleranceRadius * frameScale, tolerance.maxPositionOffsetPx);
-    const candidates = detections
-      .filter((item) => allowedLabels.has(item.label.toLowerCase()) && item.confidence >= (roi.minConfidence || tolerance.minScrewConfidence))
-      .map((item) => ({
-        item,
-        distance: Math.hypot(
-          (item.x - result.expectedTransformedPosition.x) * frameWidth,
-          (item.y - result.expectedTransformedPosition.y) * frameHeight
-        ),
-      }))
-      .filter((item) => item.distance <= radiusPx)
-      .sort((a, b) => b.item.confidence - a.item.confidence);
-    const candidate = candidates[0];
 
-    // Non-screw classes need class-aware confirmation. The classical circular
-    // detector alone cannot establish that a clip/connector/custom part exists.
-    if (roi.objectType !== 'screw') {
-      if (!candidate) {
+    const toleranceRadiusPx = Math.max(
+      roi.toleranceRadius * frameScale,
+      tolerance.maxPositionOffsetPx
+    );
+    // Search beyond the pass tolerance so a shifted object can be identified
+    // as present-but-abnormal instead of silently becoming "missing".
+    const associationRadiusPx = Math.max(
+      toleranceRadiusPx * 3,
+      roi.radius * frameScale * 2,
+      40
+    );
+
+    detections.forEach((detection, detectionIndex) => {
+      if (
+        !allowedLabels.has(detection.label.trim().toLowerCase()) ||
+        detection.confidence < (roi.minConfidence ?? tolerance.minScrewConfidence)
+      ) return;
+
+      const distancePx = Math.hypot(
+        (detection.x - result.expectedTransformedPosition.x) * frameWidth,
+        (detection.y - result.expectedTransformedPosition.y) * frameHeight
+      );
+      if (distancePx <= associationRadiusPx) {
+        pairs.push({ resultIndex, detectionIndex, distancePx, toleranceRadiusPx });
+      }
+    });
+  });
+
+  // Greedy one-to-one assignment: one detection cannot satisfy multiple ROIs.
+  // Closest ROI/detection pairs are assigned first; confidence breaks ties.
+  pairs.sort((a, b) =>
+    a.distancePx - b.distancePx ||
+    detections[b.detectionIndex].confidence - detections[a.detectionIndex].confidence
+  );
+  const assignedByResult = new Map<number, CandidatePair>();
+  const usedDetections = new Set<number>();
+  for (const pair of pairs) {
+    if (assignedByResult.has(pair.resultIndex) || usedDetections.has(pair.detectionIndex)) continue;
+    assignedByResult.set(pair.resultIndex, pair);
+    usedDetections.add(pair.detectionIndex);
+  }
+
+  return results.map((result, resultIndex) => {
+    const roi = byId.get(result.roiId);
+    if (!roi?.isRequired) return result;
+
+    const pair = assignedByResult.get(resultIndex);
+    if (!pair) {
+      // Non-screw classes require class-aware evidence. A lack of detection is
+      // inconclusive, not proof of absence; let the rule engine report INVALID
+      // / uncertainty according to its configured policy.
+      if (roi.objectType !== 'screw') {
+        const expectedClass = (roi.objectClass || roi.objectType).trim();
         return {
           ...result,
           isPresent: false,
@@ -281,41 +326,37 @@ export function applyYoloSupportingEvidence(
           failureReason: `YOLO did not confirm class "${expectedClass}" in ${roi.name}`,
         };
       }
-      const withinTolerance = candidate.distance <= radiusPx;
-      return {
-        ...result,
-        actualDetectedPosition: { x: candidate.item.x, y: candidate.item.y },
-        positionOffsetPx: Math.round(candidate.distance * 10) / 10,
-        positionOffsetMm: Math.round((candidate.distance / Math.max(1, tolerance.maxPositionOffsetPx)) * tolerance.maxPositionOffsetMm * 100) / 100,
-        isWithinTolerance: withinTolerance,
-        confidence: Math.round(candidate.item.confidence * 100) / 100,
-        isPresent: true,
-        evidence: 'PRESENT',
-        status: withinTolerance ? 'PASS' : 'FAIL',
-        failureReason: withinTolerance ? undefined : `${roi.name} Position Out of Tolerance`,
-      };
+      return result;
     }
 
-    if (result.isPresent || result.evidence === 'PRESENT') return result;
+    const detection = detections[pair.detectionIndex];
+    const withinTolerance = pair.distancePx <= pair.toleranceRadiusPx;
 
-    // Screw ROIs keep the classical RVI decision unless YOLO can recover a
-    // required ROI that classical vision marked absent/uncertain.
-    // Every ROI can use YOLO, not only screws. The configured class name must
-    // match a class label emitted by the loaded model; screw aliases are kept
-    // for backward compatibility with existing masters.
-    const screwCandidate = candidate;
-    if (!screwCandidate) return result;
+    // Preserve the classical screw measurement when it already found a
+    // plausible in-tolerance screw. YOLO can recover an uncertain/missing
+    // screw, or identify a class-matched screw shifted outside tolerance.
+    if (
+      roi.objectType === 'screw' &&
+      (result.isPresent || result.evidence === 'PRESENT') &&
+      withinTolerance
+    ) {
+      return result;
+    }
 
     return {
       ...result,
-      actualDetectedPosition: { x: screwCandidate.item.x, y: screwCandidate.item.y },
-      positionOffsetPx: Math.round(screwCandidate.distance * 10) / 10,
-      isWithinTolerance: true,
-      confidence: Math.round(screwCandidate.item.confidence * 100) / 100,
+      actualDetectedPosition: { x: detection.x, y: detection.y },
+      positionOffsetPx: Math.round(pair.distancePx * 10) / 10,
+      positionOffsetMm: Math.round(
+        (pair.distancePx / Math.max(1, tolerance.maxPositionOffsetPx)) *
+        tolerance.maxPositionOffsetMm * 100
+      ) / 100,
+      isWithinTolerance: withinTolerance,
+      confidence: Math.round(detection.confidence * 100) / 100,
       isPresent: true,
       evidence: 'PRESENT',
-      status: 'PASS',
-      failureReason: undefined,
+      status: withinTolerance ? 'PASS' : 'FAIL',
+      failureReason: withinTolerance ? undefined : `${roi.name} Position Out of Tolerance`,
     };
   });
-};
+}
