@@ -33,7 +33,7 @@ export function readStorageConfig(): StorageRuntimeConfig {
       // Treat them as local unless the new runtime config version is present.
       configVersion: 2,
       target: parsed.configVersion === 2 && parsed.target === 'internal-server' ? 'internal-server' : 'local',
-      endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint.trim().replace(/\\/$/, '') : '',
+      endpoint: typeof parsed.endpoint === 'string' ? parsed.endpoint.trim().replace(/\/$/, '') : '',
       stationName: typeof parsed.stationName === 'string' && parsed.stationName.trim()
         ? parsed.stationName.trim()
         : DEFAULT_STORAGE_CONFIG.stationName,
