@@ -11,7 +11,8 @@
     "audit:recognizer": "node scripts/adversarial-recognizer-audit.mjs",
     "audit:vision-architecture": "node scripts/vision-architecture-audit.mjs",
     "server:local": "node server/local-storage-server.mjs",
-    "check:server": "node --check server/local-storage-server.mjs"
+    "check:server": "node --check server/local-storage-server.mjs",
+    "test:server": "node scripts/test-local-storage-api.mjs"
   },
   "dependencies": {
     "@opencvjs/web": "5.0.0-release.2",
