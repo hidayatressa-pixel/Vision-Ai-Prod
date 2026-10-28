@@ -188,7 +188,7 @@ export const yoloEngine = {
 
 /**
  * YOLO may only recover a classical detector's ABSENT/UNCERTAIN ROI when a
- * screw-class detection lies inside that engineer-defined ROI tolerance.
+ * matching class detection lies inside that engineer-defined ROI tolerance.
  * It cannot create a new ROI, expand a boundary, or decide final judgement.
  */
 export function applyYoloSupportingEvidence(
@@ -199,7 +199,7 @@ export function applyYoloSupportingEvidence(
   frameWidth: number,
   frameHeight: number
 ): ROIInspectionResult[] {
-  if (!detections.length || frameWidth <= 0 || frameHeight <= 0) return results;
+  if (frameWidth <= 0 || frameHeight <= 0) return results;
   const defaultScrewLabels = new Set(readConfig().screwClassNames);
   const frameScale = Math.min(frameWidth, frameHeight);
   const byId = new Map(rois.map((roi) => [roi.id, roi]));
