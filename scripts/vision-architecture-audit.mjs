@@ -148,7 +148,8 @@ check(
 check(
   'Local storage server scripts are registered',
   packageJson.scripts['server:local'] === 'node server/local-storage-server.mjs' &&
-    packageJson.scripts['check:server'] === 'node --check server/local-storage-server.mjs',
+    packageJson.scripts['check:server'] === 'node --check server/local-storage-server.mjs' &&
+    packageJson.scripts['test:server'] === 'node scripts/test-local-storage-api.mjs',
   'The internal API must be runnable and syntax-checkable using documented npm scripts.'
 );
 
