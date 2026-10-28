@@ -636,7 +636,9 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                         }} className="mb-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-cyan-200 outline-none focus:border-cyan-400" />
                         <p className={`mb-2 text-[10px] ${!yoloEngine.isConfigured() || !yoloEngine.supportsClass(roi.objectClass || roi.objectType) ? 'text-amber-300' : 'text-emerald-300'}`}>
                           {!yoloEngine.isConfigured()
-                            ? 'YOLO model is not configured; this class cannot be verified by YOLO.'
+                            ? roi.objectType === 'screw'
+                              ? 'YOLO is optional for screw ROIs; OpenCV/RVI remains available. Custom classes need a compatible YOLO model.'
+                              : 'YOLO model is not configured; this custom class cannot be verified.'
                             : yoloEngine.supportsClass(roi.objectClass || roi.objectType)
                               ? 'Class label is listed in the configured YOLO model.'
                               : 'Class is not listed in the configured model labels. Update the model/label map before using this ROI.'}
