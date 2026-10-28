@@ -4,7 +4,7 @@ import { ActiveTab } from '../Navbar';
 import { dbService } from '../../services/db';
 import { readStorageConfig, writeStorageConfig, type StorageRuntimeConfig, type StorageTarget } from '../../services/storage/storageConfig';
 
-type DraftProfile = Omit<StorageRuntimeConfig, 'target'>;
+type DraftProfile = Pick<StorageRuntimeConfig, 'endpoint' | 'stationName' | 'accessToken' | 'readEnabled' | 'writeEnabled'>;
 
 const defaultDraft: DraftProfile = {
   endpoint: '',
@@ -47,6 +47,7 @@ export const StorageServerSettings: React.FC<StorageServerSettingsProps> = ({ on
 
   const persistProfile = (target: StorageTarget = activeTarget) => {
     const next: StorageRuntimeConfig = {
+      configVersion: 2,
       target,
       endpoint: normalizedEndpoint,
       stationName: draft.stationName.trim() || 'STAND-CAM-01',
@@ -200,6 +201,12 @@ export const StorageServerSettings: React.FC<StorageServerSettingsProps> = ({ on
           <span className="mt-4 inline-flex rounded-lg border border-amber-500/30 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-amber-300">{activeTarget === 'internal-server' ? 'Aktif' : 'Belum aktif'}</span>
         </button>
       </div>
+
+      {selectedTarget === 'local' && activeTarget !== 'local' && (
+        <div className="flex justify-end">
+          <button onClick={useLocalStation} className="rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-bold text-slate-950 hover:bg-emerald-300">Activate Local Station</button>
+        </div>
+      )}
 
       {selectedTarget === 'internal-server' && (
         <div className="space-y-4 rounded-2xl border border-amber-500/30 bg-slate-900/70 p-5">
