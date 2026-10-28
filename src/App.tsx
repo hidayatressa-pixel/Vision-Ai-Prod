@@ -192,6 +192,7 @@ export default function App() {
         {activeTab === 'PLC_SETUP' && <PLCConfigurationView />}
         {activeTab === 'DIAGNOSTICS' && <DiagnosticsModal metrics={pipeline.liveMetrics} />}
       </main>
+      <MasterSetupEntryModal isOpen={isMasterEntryOpen} exampleMaster={masters.find((item) => item.id === SEED_PRODUCT_A.id) || masters.find((item) => item.productCode === SEED_PRODUCT_A.productCode) || SEED_PRODUCT_A} onClose={() => setIsMasterEntryOpen(false)} onUseExample={handleUseExampleMaster} onCreateProduct={handleCreateConfiguredProduct} />
       {isSetupModalOpen && setupMaster && setupRevision && <MasterSetupModal master={setupMaster} revision={setupRevision} isOpen={isSetupModalOpen} onClose={() => setIsSetupModalOpen(false)} onSaved={loadMasters} />}
     </div>
   );
