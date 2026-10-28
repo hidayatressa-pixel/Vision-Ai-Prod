@@ -119,7 +119,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const path = url.pathname.replace(/^\/api(?=\\/|$)/, '') || '/';
+  const path = url.pathname.replace(/^\/api(?=\/|$)/, '') || '/';
   if (path === '/health' && req.method === 'GET') {
     if (!equalToken((req.headers.authorization || '').replace(/^Bearer\s+/i, ''))) {
       send(res, 401, { error: 'Unauthorized' }); return;
