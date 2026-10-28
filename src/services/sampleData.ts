@@ -197,11 +197,6 @@ export async function initSeedDataIfEmpty() {
     await dbService.saveMaster(canonical);
   }
 
-  // Production policy: only Reflector Assy HL GJRA may remain registered.
-  // This removes legacy B6 / 6-screw / Product A records and any duplicates.
-  for (const master of existing) {
-    if (master.id !== SEED_PRODUCT_A.id) {
-      await dbService.deleteMaster(master.id);
-    }
-  }
+  // Do not delete any other master records during seed initialization.
+  // User-created products are independent production configurations.
 }
