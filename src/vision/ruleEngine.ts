@@ -36,9 +36,8 @@ export class RuleEngine {
     // Configuration is part of inspection safety. A required screw without a
     // usable golden reference would silently fall back to geometry-only
     // detection, which is not acceptable for the production trial.
-    const requiredScrewROIs = revision.inspectionROIs.filter(
-      (roi) => roi.objectType === 'screw' && roi.isRequired
-    );
+    const requiredROIs = revision.inspectionROIs.filter((roi) => roi.isRequired);
+    const requiredScrewROIs = requiredROIs.filter((roi) => roi.objectType === 'screw');
     const referenceByRoi = new Map(
       revision.referenceImages
         .filter((reference) => Boolean(reference.imageUrl))
@@ -47,25 +46,31 @@ export class RuleEngine {
     const missingReferences = requiredScrewROIs.filter(
       (roi) => !referenceByRoi.has(roi.id)
     );
+    const invalidRequiredCount =
+      requiredROIs.length === 0 || revision.expectedObjectCount !== requiredROIs.length;
 
     if (
       revision.masterWidth <= 0 ||
       revision.masterHeight <= 0 ||
       !revision.masterImageUrl ||
-      missingReferences.length > 0
+      missingReferences.length > 0 ||
+      invalidRequiredCount
     ) {
       const missing = missingReferences.map((roi) => roi.name).join(', ');
       const reason = [
         revision.masterWidth <= 0 || revision.masterHeight <= 0 ? 'master dimensions are not calibrated' : '',
         !revision.masterImageUrl ? 'master image is missing' : '',
         missing ? `golden reference missing for: ${missing}` : '',
+        invalidRequiredCount
+          ? `expected object count (${revision.expectedObjectCount}) must equal required ROI count (${requiredROIs.length})`
+          : '',
       ].filter(Boolean).join('; ');
 
       defects.push({
         code: 'MASTER_CONFIGURATION_INVALID',
         message: `Master configuration is not trial-safe: ${reason}`,
-        expected: 'Calibrated master image and golden references for required screw ROIs',
-        actual: 'Configuration incomplete',
+        expected: 'Calibrated master image, references for required screw ROIs, and a consistent required ROI count',
+        actual: 'Configuration incomplete or inconsistent',
       });
 
       return {
@@ -98,35 +103,41 @@ export class RuleEngine {
       };
     }
 
-    // 2. Per-ROI Evaluation (Missing screws, out-of-tolerance screws, low confidence)
-    let presentScrewCount = 0;
+    // 2. Evaluate required component ROIs. Optional ROIs must not affect
+    // required-part counts or create missing-part defects.
+    let presentRequiredCount = 0;
+    const requiredRoiIds = new Set(requiredROIs.map((roi) => roi.id));
 
-    for (const roi of roiResults) {
-      if (!roi.isPresent) {
-        if (roi.status === 'FAIL' && roi.evidence !== 'UNCERTAIN') {
+    for (const roiResult of roiResults) {
+      if (!requiredRoiIds.has(roiResult.roiId)) continue;
+
+      if (!roiResult.isPresent) {
+        if (roiResult.status === 'FAIL' && roiResult.evidence !== 'UNCERTAIN') {
           defects.push({
             code: 'MISSING_PART',
-            roiId: roi.roiId,
-            roiName: roi.roiName,
-            message: `${roi.roiName} Missing`,
-            expected: 'Present (Conf > 65%)',
-            actual: `Absent (Conf ${(roi.confidence * 100).toFixed(0)}%)`,
+            roiId: roiResult.roiId,
+            roiName: roiResult.roiName,
+            message: `${roiResult.roiName} Missing`,
+            expected: 'Required component present',
+            actual: `Absent (confidence ${(roiResult.confidence * 100).toFixed(0)}%)`,
           });
         }
-      } else {
-        // Present, now check tolerance
-        if (!roi.isWithinTolerance) {
-          defects.push({
-            code: 'POSITION_OUT_OF_TOLERANCE',
-            roiId: roi.roiId,
-            roiName: roi.roiName,
-            message: `${roi.roiName} Position Out of Tolerance (+${roi.positionOffsetMm}mm)`,
-            expected: `< ${revision.tolerance.maxPositionOffsetMm}mm`,
-            actual: `${roi.positionOffsetMm}mm (${roi.positionOffsetPx}px)`,
-          });
-        } else {
-          presentScrewCount++;
-        }
+        continue;
+      }
+
+      // Count a detected component even when its position is defective. A
+      // shifted component is present-but-NG, not both shifted and missing.
+      presentRequiredCount++;
+
+      if (!roiResult.isWithinTolerance) {
+        defects.push({
+          code: 'POSITION_OUT_OF_TOLERANCE',
+          roiId: roiResult.roiId,
+          roiName: roiResult.roiName,
+          message: `${roiResult.roiName} Position Out of Tolerance (+${roiResult.positionOffsetMm}mm)`,
+          expected: `< ${revision.tolerance.maxPositionOffsetMm}mm`,
+          actual: `${roiResult.positionOffsetMm}mm (${roiResult.positionOffsetPx}px)`,
+        });
       }
     }
 
@@ -144,7 +155,7 @@ export class RuleEngine {
 
     // 4. Object Count Rule
     const expectedCount = revision.expectedObjectCount;
-    const totalDetected = presentScrewCount + extraObjects.length;
+    const totalDetected = presentRequiredCount + extraObjects.length;
 
     if (totalDetected !== expectedCount) {
       if (totalDetected < expectedCount && !defects.some((d) => d.code === 'MISSING_PART')) {
@@ -179,7 +190,7 @@ export class RuleEngine {
         primaryReason: 'Inspection Invalid: vision evidence was insufficient to confirm one or more required ROIs',
         defects,
         expectedCount,
-        detectedCount: presentScrewCount,
+        detectedCount: presentRequiredCount,
       };
     }
 
@@ -189,7 +200,7 @@ export class RuleEngine {
         primaryReason: `All ${expectedCount}/${expectedCount} required components inspected OK (tolerance passed)`,
         defects: [],
         expectedCount,
-        detectedCount: presentScrewCount,
+        detectedCount: presentRequiredCount,
       };
     }
 
@@ -202,7 +213,7 @@ export class RuleEngine {
       primaryReason: primaryDefect.message,
       defects,
       expectedCount,
-      detectedCount: presentScrewCount,
+      detectedCount: presentRequiredCount,
     };
   }
 }
