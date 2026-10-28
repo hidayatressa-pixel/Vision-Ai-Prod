@@ -20,6 +20,8 @@ const pipeline = read('../src/hooks/useInspectionPipeline.ts');
 const db = read('../src/services/db.ts');
 const seed = read('../src/services/sampleData.ts');
 const internalAdapter = read('../src/services/storage/InternalServerStorageAdapter.ts');
+const pinGate = read('../src/components/auth/EngineeringPinGate.tsx');
+const readme = read('../README.md');
 const packageJson = JSON.parse(read('../package.json'));
 
 check(
@@ -101,11 +103,19 @@ check(
 );
 
 check(
+  'Engineering PIN is not represented as production authentication',
+  pinGate.includes('not production authentication') &&
+    readme.includes('can be inspected or bypassed') &&
+    readme.includes('not production authentication'),
+  'A client-side PIN gate is only a UI convenience; production access needs managed authentication.'
+);
+
+check(
   'Architecture audit is registered in package scripts',
   packageJson.scripts['audit:vision-architecture'] === 'node scripts/vision-architecture-audit.mjs',
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 11);
+assert.equal(checks.length, 12);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
