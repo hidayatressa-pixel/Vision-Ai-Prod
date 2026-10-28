@@ -38,7 +38,7 @@ function makeRois(count: number, zone: FocusZone, objectClass: string): Inspecti
     return {
       id: `roi-${Date.now()}-${index + 1}`,
       name: `${objectClass} #${index + 1}`,
-      objectType: objectClass.toLowerCase() === 'screw' || objectClass.toLowerCase() === 'bolt' || objectClass.toLowerCase() === 'fastener' ? 'screw' : 'component',
+      objectType: (['screw', 'bolt', 'fastener'].includes(objectClass.toLowerCase()) ? 'screw' : ['connector', 'clip', 'label'].includes(objectClass.toLowerCase()) ? objectClass.toLowerCase() as InspectionROI['objectType'] : 'component'),
       objectClass: objectClass.trim(),
       focusZone: zone,
       x: box.x + box.width * ((col + 1) / (columns + 1)),
