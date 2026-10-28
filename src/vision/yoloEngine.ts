@@ -33,7 +33,7 @@ const DEFAULT_INPUT_SIZE = 640;
 let sessionPromise: Promise<ort.InferenceSession> | null = null;
 
 function readConfig(): YoloConfig {
-  const env = import.meta.env;
+  const env = import.meta.env as Record<string, string | undefined>;
   return {
     modelUrl: (env.VITE_YOLO_MODEL_URL || '').trim(),
     inputSize: Number(env.VITE_YOLO_INPUT_SIZE) || DEFAULT_INPUT_SIZE,
@@ -47,10 +47,20 @@ function readConfig(): YoloConfig {
 async function getSession(config: YoloConfig): Promise<ort.InferenceSession> {
   if (!config.modelUrl) throw new Error('YOLO model URL is not configured.');
   if (!sessionPromise) {
-    sessionPromise = ort.InferenceSession.create(config.modelUrl, {
-      executionProviders: ['webgpu', 'wasm'],
-      graphOptimizationLevel: 'all',
-    }).catch((error) => {
+    sessionPromise = (async () => {
+      // Prefer WebGPU when available, then retry with the portable WASM provider.
+      try {
+        return await ort.InferenceSession.create(config.modelUrl, {
+          executionProviders: ['webgpu'],
+          graphOptimizationLevel: 'all',
+        });
+      } catch {
+        return ort.InferenceSession.create(config.modelUrl, {
+          executionProviders: ['wasm'],
+          graphOptimizationLevel: 'all',
+        });
+      }
+    })().catch((error) => {
       sessionPromise = null;
       throw error;
     });
