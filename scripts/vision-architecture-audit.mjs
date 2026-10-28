@@ -53,6 +53,15 @@ check(
 );
 
 check(
+  'YOLO class support is explicit and missing parts are distinguishable',
+  yolo.includes('supportsClass(className: string)') &&
+    yolo.includes('const classSupported =') &&
+    yolo.includes("evidence: 'ABSENT'") &&
+    yolo.includes("evidence: 'UNCERTAIN'"),
+  'A supported class with no ROI detection is different from a class the model cannot recognize.'
+);
+
+check(
   'Rule engine is part of the live inspection path',
   pipeline.includes('ruleEngine.evaluate') &&
     pipeline.includes('saveInspectionRecord'),
@@ -88,6 +97,6 @@ check(
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 9);
+assert.equal(checks.length, 10);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
