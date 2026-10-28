@@ -373,7 +373,7 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                 Master Calibration & ROI Editor · {master.productName} ({editedRevision.revisionCode})
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                Position anchors, configure expected screws, and adjust allowable tolerances.
+                Position anchors, configure required component classes, and adjust allowable tolerances.
               </p>
             </div>
           </div>
@@ -513,10 +513,10 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                 <span className="inline-block h-3 w-3 rounded-full border-2 border-yellow-400 border-dashed"></span>
                 YELLOW = absolute tolerance boundary
               </div>
-              <div className="text-[10px] font-mono text-cyan-300">Drag any blue point to match the actual screw.</div>
+              <div className="text-[10px] font-mono text-cyan-300">Drag any blue ROI point to the actual component location.</div>
             </div>
             <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
-              <span>Master image = layout/alignment reference. Close-up references = visual evidence for each inspection point.</span>
+              <span>Master image = layout/alignment reference. Close-up references = optional visual evidence linked to each inspection point.</span>
               <span className="text-cyan-400">Master Res: {editedRevision.masterWidth}x{editedRevision.masterHeight}</span>
             </div>
           </div>
