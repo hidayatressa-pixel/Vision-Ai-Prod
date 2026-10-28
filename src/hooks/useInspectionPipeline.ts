@@ -320,7 +320,9 @@ export function useInspectionPipeline({
                 revision.inspectionROIs,
                 revision.tolerance,
                 candidateFrame.width,
-                candidateFrame.height
+                candidateFrame.height,
+                revision.masterWidth,
+                revision.masterHeight
               );
             } catch (yoloError) {
               console.warn('[VisionPipeline] YOLO inference failed:', yoloError);
