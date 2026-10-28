@@ -107,7 +107,7 @@ VITE_YOLO_SCREW_CLASS_NAMES=screw,fastener,bolt
 
 Place the approved model at the configured public path. The parser expects a batch-1 YOLOv8 detection output tensor, and configured label count/order must match the model output. Master Setup shows whether the configured label map contains the selected class. For a supported class, a valid inference with no detection in a required ROI can produce a missing-part NG; a class not declared by the model or an inference failure remains uncertain/INVALID. Verify output shape, class order, confidence calibration, and representative production images before trial use. YOLO is never the final OK/NG/INVALID authority.
 
-The future internal-server adapter is currently a disabled contract stub. It sends no requests until the company endpoint, authentication, data contract, and retry/conflict behavior are approved.
+The internal-server adapter now uses the configurable local HTTP API documented below. It remains opt-in; the local IndexedDB backend stays active until a successful connection test and explicit activation. Review the shared-token and JSON-file persistence limitations before using it beyond a controlled development LAN.
 
 Do **not** put a Supabase secret/service-role key in the browser or commit it to GitHub. The browser should use only the publishable key with RLS enabled. urlSupabase API keys guidancehttps://supabase.com/docs/guides/getting-started/api-keys
 
