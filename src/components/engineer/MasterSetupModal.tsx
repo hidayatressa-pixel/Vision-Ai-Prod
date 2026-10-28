@@ -545,11 +545,21 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
 
             {activeTab === 'VISUAL' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Inspection Components</span>
-                    <div className="mt-1 text-[10px] font-mono text-cyan-300">{editedRevision.inspectionROIs.filter((roi) => roi.isRequired).length} required · Zone {editedRevision.focusZone || 'A'}</div>
+                    <div className="mt-1 text-[10px] font-mono text-cyan-300">{editedRevision.inspectionROIs.filter((roi) => roi.isRequired).length} required</div>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-slate-400">Focus zone
+                      <select value={editedRevision.focusZone || 'A'} onChange={(e) => {
+                        const zone = e.target.value as 'A' | 'B' | 'C';
+                        const detectionZone = zone === 'A' ? { x: 0.05, y: 0.1, width: 0.3, height: 0.8 } : zone === 'B' ? { x: 0.35, y: 0.1, width: 0.3, height: 0.8 } : { x: 0.65, y: 0.1, width: 0.3, height: 0.8 };
+                        setEditedRevision((prev) => ({ ...prev, focusZone: zone, detectionZone, inspectionROIs: prev.inspectionROIs.map((roi) => ({ ...roi, focusZone: zone })) }));
+                      }} className="ml-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-cyan-300">
+                        <option value="A">A · Left</option><option value="B">B · Center</option><option value="C">C · Right</option>
+                      </select>
+                    </label>
                   <button type="button" onClick={() => {
                     const index = editedRevision.inspectionROIs.length + 1;
                     const roi: InspectionROI = {
@@ -561,6 +571,7 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                     setEditedRevision((prev) => ({ ...prev, inspectionROIs: [...prev.inspectionROIs, roi], expectedObjectCount: prev.inspectionROIs.filter((item) => item.isRequired).length + 1 }));
                     setSelectedId(roi.id); setSelectedItemType('ROI');
                   }} className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20"><Plus className="h-3 w-3" /> Add ROI</button>
+                  </div>
                 </div>
 
                 {selectedReference && (
