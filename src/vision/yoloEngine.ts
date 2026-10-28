@@ -259,7 +259,9 @@ export function applyYoloSupportingEvidence(
   rois: InspectionROI[],
   tolerance: ToleranceConfig,
   frameWidth: number,
-  frameHeight: number
+  frameHeight: number,
+  masterWidth = frameWidth,
+  masterHeight = frameHeight
 ): ROIInspectionResult[] {
   if (frameWidth <= 0 || frameHeight <= 0) return results;
 
@@ -267,6 +269,9 @@ export function applyYoloSupportingEvidence(
   const defaultScrewLabels = new Set(config.screwClassNames);
   const configuredLabels = new Set(config.labels.map((label) => label.trim().toLowerCase()));
   const frameScale = Math.min(frameWidth, frameHeight);
+  const masterMinDimension = Math.max(1, Math.min(masterWidth, masterHeight));
+  const scaledMaxPositionOffsetPx =
+    tolerance.maxPositionOffsetPx * frameScale / masterMinDimension;
   const byId = new Map(rois.map((roi) => [roi.id, roi]));
 
   type CandidatePair = {
@@ -289,7 +294,7 @@ export function applyYoloSupportingEvidence(
 
     const toleranceRadiusPx = Math.max(
       roi.toleranceRadius * frameScale,
-      tolerance.maxPositionOffsetPx
+      scaledMaxPositionOffsetPx
     );
     // Search beyond the pass tolerance so a shifted object can be identified
     // as present-but-abnormal instead of silently becoming "missing".
@@ -391,7 +396,7 @@ export function applyYoloSupportingEvidence(
       actualDetectedPosition: { x: detection.x, y: detection.y },
       positionOffsetPx: Math.round(pair.distancePx * 10) / 10,
       positionOffsetMm: Math.round(
-        (pair.distancePx / Math.max(1, tolerance.maxPositionOffsetPx)) *
+        (pair.distancePx / Math.max(1, scaledMaxPositionOffsetPx)) *
         tolerance.maxPositionOffsetMm * 100
       ) / 100,
       isWithinTolerance: withinTolerance,
