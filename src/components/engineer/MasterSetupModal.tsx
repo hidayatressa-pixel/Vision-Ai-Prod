@@ -619,7 +619,7 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                         <input type="text" value={roi.objectClass || roi.objectType} onChange={(e) => {
                           const objectClass = e.target.value;
                           const normalized = objectClass.trim().toLowerCase();
-                          const objectType = ['screw', 'bolt', 'fastener'].includes(normalized) ? 'screw' : ['connector', 'clip', 'label'].includes(normalized) ? normalized : 'component';
+                          const objectType: 'screw' | 'connector' | 'clip' | 'label' | 'component' = ['screw', 'bolt', 'fastener'].includes(normalized) ? 'screw' : normalized === 'connector' || normalized === 'clip' || normalized === 'label' ? normalized : 'component';
                           setEditedRevision((prev) => ({ ...prev, inspectionROIs: prev.inspectionROIs.map((r) => r.id === roi.id ? { ...r, objectClass, objectType } : r) }));
                         }} className="mb-2 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-cyan-200 outline-none focus:border-cyan-400" />
 
