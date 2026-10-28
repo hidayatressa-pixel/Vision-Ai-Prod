@@ -190,9 +190,35 @@ This repository intentionally contains no bundled production reference imagery u
 
 ## Storage and internal server configuration
 
-Engineering Settings includes a **Storage & Server** screen with a local station option and a draft profile for the future internal company server. The draft stores the station label and API base URL in this browser only; it does not send network requests, test connectivity, or switch the active backend. IndexedDB remains the active persistence layer.
+The **Settings → Storage & Server** screen controls the runtime storage target and server read/write permissions.
 
-Do not activate a server migration until the company API contract, authentication, authorization, data ownership, conflict handling, retry/offline behavior, backup, and migration/rollback plan have been approved. Saving a server profile does not move or delete local master data or inspection history.
+- **Local Station** uses browser IndexedDB.
+- **Local Company Server** uses the authenticated internal HTTP API implemented in `server/local-storage-server.mjs`.
+- Master reads/writes/deletes and inspection-history reads/writes/clears follow the active target. When the server target is active, API failures are surfaced; the app does not silently write to IndexedDB as a fallback.
+- The server API persists data to a JSON file (default `server/data/vision-store.json`) using atomic file replacement. Back up this file and restrict filesystem access. This is an initial on-premise MVP, not a substitute for a managed production database or enterprise identity provider.
+- **Test connection** checks the API URL and bearer token before activation. **Migrate local data & activate** sends an explicit snapshot of local masters and history, merges by ID, and keeps the original IndexedDB data. If an ID exists on the server with different content, the migration is rejected rather than overwriting that record. **Activate without migration** is available only after connection testing and requires confirmation.
+- Legacy browser settings that only saved a server draft remain on Local Station until the new runtime configuration version is explicitly activated.
+
+### Start the internal storage API (Windows PowerShell)
+
+Run these commands in the repository folder on the computer that will host the API:
+
+```powershell
+$env:VISION_SERVER_TOKEN = ([guid]::NewGuid().ToString("N") + [guid]::NewGuid().ToString("N"))
+$env:VISION_SERVER_PORT = "8787"
+$env:VISION_CORS_ORIGINS = "http://localhost:3000,http://localhost:4173"
+npm run server:local
+```
+
+Keep the generated token in a secure place for configuring each authorized station. The server refuses to start if the token is shorter than 32 characters. The API listens on port 8787 by default and stores records in `data/vision-store.json` relative to the working directory. To use a different data path, set `VISION_SERVER_DATA_FILE`.
+
+If the browser opens the frontend from a different origin (for example `http://192.168.1.20:3000`), add that exact origin to `VISION_CORS_ORIGINS` before starting the API. Configure the Windows firewall for the API port only on the trusted internal network. In the UI, set the base URL to `http://SERVER-IP:8787/api`, enter the same token, and run **Test connection**.
+
+### Security and operational limits
+
+This first server implementation uses a shared bearer token and JSON-file persistence. The token is stored in the browser's localStorage and can be inspected by a user with access to that browser; it is not enterprise-grade user authentication. Keep the API on a trusted isolated LAN, do not expose it directly to the internet, and use HTTPS/reverse proxy plus managed identity and a managed database before production deployment. The API includes origin allowlisting, a body-size limit, token comparison, and serialized atomic file writes, but those controls do not replace an IT/security review.
+
+Server mode has no automatic offline fallback or bidirectional synchronization. If the API is unavailable, server operations fail explicitly. Returning to Local Station switches reads/writes back to that station's existing IndexedDB; it does not automatically copy server data back. Treat migration and backup as explicit operational steps.
 
 ## Dynamic product master setup
 
