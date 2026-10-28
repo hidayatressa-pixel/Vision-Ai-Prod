@@ -119,15 +119,15 @@ const server = createServer(async (req, res) => {
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
-  const path = url.pathname.replace(/^\\/api(?=\\/|$)/, '') || '/';
+  const path = url.pathname.replace(/^\/api(?=\\/|$)/, '') || '/';
   if (path === '/health' && req.method === 'GET') {
-    if (!equalToken((req.headers.authorization || '').replace(/^Bearer\\s+/i, ''))) {
+    if (!equalToken((req.headers.authorization || '').replace(/^Bearer\s+/i, ''))) {
       send(res, 401, { error: 'Unauthorized' }); return;
     }
     send(res, 200, { ok: true, service: 'vision-local-storage', version: '1.0.0' }); return;
   }
 
-  if (!equalToken((req.headers.authorization || '').replace(/^Bearer\\s+/i, ''))) {
+  if (!equalToken((req.headers.authorization || '').replace(/^Bearer\s+/i, ''))) {
     send(res, 401, { error: 'Unauthorized' }); return;
   }
   if (origin && !ALLOWED_ORIGINS.has(origin)) {
