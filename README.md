@@ -2,14 +2,14 @@
 
 Industrial vision inspection station for **Reflector Assy HL GJRA**.
 
-The application is designed for a fixed camera station where each workpiece is located, aligned against a configured master, inspected at eight screw positions, and classified deterministically as **OK**, **NG**, or **INVALID**.
+The built-in Reflector Assy HL GJRA example uses eight screw positions. New product masters can configure their own component classes and required ROI counts. Each workpiece is aligned against its approved master and classified deterministically as **OK**, **NG**, or **INVALID**.
 
 ## Core workflow
 
-1. **Master Setup** — Engineering uploads one approved master image, configures four alignment anchors, eight screw inspection ROIs, tolerances, and exactly eight close-up reference images.
+1. **Master Setup** — Engineering chooses the existing eight-screw Example Master or registers a new product, then configures its master image, alignment anchors, required component ROIs, tolerances, and any required close-up references.
 2. **Part Detection** — The camera monitors the configured detection zone and waits for the workpiece to settle.
 3. **Alignment** — Fiducial anchors determine translation, rotation, scale, and residual error before inspection.
-4. **Inspection** — Each of the eight required screw locations is checked for presence, confidence, and position tolerance. Unexpected screw-like objects are also screened.
+4. **Inspection** — Each required ROI is checked for presence, confidence, and position tolerance. The example master uses screw references; custom classes require a compatible model or an explicitly configured inspection method. Unexpected objects are screened where supported.
 5. **Rule Engine** — The configured master remains authoritative. Alignment failures are reported as system errors; part defects produce NG.
 6. **Re-arm** — After a judgement, the station waits for removal or a meaningful replacement/repositioning change before allowing another inspection.
 7. **History** — Inspection results are committed to station-local IndexedDB first. Optional Supabase synchronization is disabled unless explicitly enabled.
@@ -18,7 +18,7 @@ The application is designed for a fixed camera station where each workpiece is l
 
 This repository is the **production/on-premise Vision-AI variant**. It does not require AWS Lambda, Amazon S3, API Gateway, or another AWS runtime for inspection.
 
-The inspection decision runs locally in the browser/device using OpenCV 5-assisted vision processing, optional YOLO ONNX supporting evidence, configured master/ROI rules, and the PLC adapter. Master settings and inspection history are stored in local IndexedDB. Supabase is an optional sync adapter, not a runtime requirement. YOLO detections can support a bounded screw ROI only; the deterministic rule engine remains the final judgement authority.
+The inspection decision runs locally in the browser/device. OpenCV 5 performs image preprocessing, alignment-related processing, and classical ROI measurements; optional YOLO ONNX inference provides class-aware detections and supporting position evidence. Master/ROI rules and the deterministic rule engine remain authoritative for final judgement. Master settings and inspection history are stored in local IndexedDB. Supabase is optional and is not a runtime requirement.
 
 The AWS/OpenCV 5 hackathon implementation is maintained separately in the `Vision-AI-AWS` repository and is intentionally not part of this production runtime.
 
@@ -77,19 +77,12 @@ drop policy if exists "inspection_history_insert" on public.inspection_history;
 drop policy if exists "inspection_history_update" on public.inspection_history;
 drop policy if exists "inspection_history_delete" on public.inspection_history;
 
-create policy "inspection_history_select"
-  on public.inspection_history for select to anon, authenticated using (true);
-create policy "inspection_history_insert"
-  on public.inspection_history for insert to anon, authenticated with check (true);
-create policy "inspection_history_update"
-  on public.inspection_history for update to anon, authenticated using (true) with check (true);
-create policy "inspection_history_delete"
-  on public.inspection_history for delete to anon, authenticated using (true);
-
-grant select, insert, update, delete on public.inspection_history to anon, authenticated;
+-- Intentionally do not add permissive anon/authenticated policies or grants.
+-- Configure authenticated, least-privilege RLS policies only after the
+-- application has a verified user/device identity and authorization model.
 ```
 
-For the current station version, this deliberately permits the publishable client to read/write the history table because the application does not yet have Supabase Auth. **Use this only on the controlled station network.** Before exposing the app publicly, add authentication and tighten the RLS policies.
+**Security requirement:** the application does not yet implement Supabase Auth or a trusted station identity. Keep cloud sync disabled until an authenticated authorization design and least-privilege RLS policies are implemented and reviewed. Do not enable broad `anon` read/write access to production inspection records. Local IndexedDB remains the supported default.
 
 Create `.env.local` in the project root only if cloud sync is approved:
 
@@ -120,6 +113,20 @@ Do **not** put a Supabase secret/service-role key in the browser or commit it to
 
 The URL and publishable key can be copied from the Supabase project's Connect/API settings. urlSupabase React quickstarthttps://supabase.com/docs/guides/getting-started/quickstarts/reactjs
 
+## Computer-vision pipeline and validation
+
+The runtime follows a layered inspection design:
+
+1. Camera acquisition and image-quality checks.
+2. OpenCV preprocessing and master alignment.
+3. ROI inspection using configured master geometry and visual references.
+4. Optional YOLO ONNX detection, with aspect-preserving letterbox preprocessing and class-aware, one-to-one ROI association.
+5. Deterministic rule evaluation for `OK`, `NG`, or `INVALID`; persistence is not used to decide or release a PLC interlock.
+
+YOLO class names in the UI are configuration only: they do not train the model. The deployed ONNX model must support the configured class and its `VITE_YOLO_CLASS_NAMES` order must match the model output. A missing detection is not automatically proof of a missing component; ambiguous evidence must remain uncertain/invalid according to the rule policy. Real camera commissioning and representative normal/abnormal-image validation are required before production use.
+
+CI runs TypeScript checking, the recognizer fixture audit, a source-contract architecture audit, and a production build. These checks do not replace visual validation with actual production images.
+
 ## Engineering configuration
 
 Settings are protected by a local engineering password. The engineering area provides:
@@ -127,7 +134,7 @@ Settings are protected by a local engineering password. The engineering area pro
 - Master and revision management
 - Master image and reference-image upload
 - Four-point fiducial alignment
-- Eight required screw ROIs
+- Configurable required ROI count and component class; the built-in example uses eight screw ROIs
 - Position, confidence, rotation, and stabilization tolerances
 - Camera selection and background calibration
 - PLC protocol and interlock configuration
