@@ -1,4 +1,4 @@
-import { InspectionROI, MasterProduct, ReferenceImage } from '../types/master';
+import { InspectionROI, MasterProduct, MasterRevision, ReferenceImage } from '../types/master';
 
 const MASTER_ASSET_BASE = `${import.meta.env.BASE_URL}master/reflector-assy-hl-gjra`;
 const BUILT_IN_MASTER_IMAGE = `${MASTER_ASSET_BASE}/Master.jpeg`;
