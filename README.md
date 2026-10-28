@@ -26,7 +26,7 @@ The AWS/OpenCV 5 hackathon implementation is maintained separately in the `Visio
 
 Master configurations (including uploaded reference-image data) and inspection history are persisted in station-local IndexedDB, so the station can run without AWS or Supabase. Existing history in the legacy `localStorage` key is migrated into IndexedDB and the legacy key is removed only after the IndexedDB transaction commits. Do not clear browser data before confirming important records have been exported/backed up.
 
-Supabase sync is opt-in. Configure `VITE_ENABLE_SUPABASE_SYNC=true` together with the URL and publishable key below to enable it. Without that explicit flag, no Supabase requests are made.
+Supabase sync is disabled by default. The feature flag exists, but **do not enable it yet**: the current app has no authenticated station/user identity, so safe least-privilege RLS policies cannot be defined. Without `VITE_ENABLE_SUPABASE_SYNC=true`, no Supabase requests are made.
 
 The application uses the Supabase REST Data API with the browser-safe **publishable key**. Supabase recommends exposing only the required tables/functions and protecting them with Row Level Security (RLS). urlSupabase JavaScript installation docshttps://supabase.com/docs/reference/javascript/installing
 
@@ -105,7 +105,7 @@ VITE_YOLO_CLASS_NAMES=screw,fastener,bolt
 VITE_YOLO_SCREW_CLASS_NAMES=screw,fastener,bolt
 ```
 
-Place the approved model at the configured public path. The parser currently expects a batch-1 YOLOv8 detection output tensor. Verify output shape, class order, confidence calibration, and representative production images before trial use. If no model URL is configured or inference fails, the existing OpenCV/RVI path continues; YOLO is never the final OK/NG/INVALID authority.
+Place the approved model at the configured public path. The parser expects a batch-1 YOLOv8 detection output tensor, and configured label count/order must match the model output. Master Setup shows whether the configured label map contains the selected class. For a supported class, a valid inference with no detection in a required ROI can produce a missing-part NG; a class not declared by the model or an inference failure remains uncertain/INVALID. Verify output shape, class order, confidence calibration, and representative production images before trial use. YOLO is never the final OK/NG/INVALID authority.
 
 The future internal-server adapter is currently a disabled contract stub. It sends no requests until the company endpoint, authentication, data contract, and retry/conflict behavior are approved.
 
