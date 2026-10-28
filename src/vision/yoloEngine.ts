@@ -215,6 +215,21 @@ export const yoloEngine = {
     return Boolean(readConfig().modelUrl);
   },
 
+  /** True only when the configured label map can represent this class. */
+  supportsClass(className: string): boolean {
+    const config = readConfig();
+    if (!config.modelUrl || config.labels.length === 0) return false;
+
+    const requested = className.trim().toLowerCase();
+    if (!requested) return false;
+    const labels = new Set(config.labels.map((label) => label.trim().toLowerCase()));
+    if (labels.has(requested)) return true;
+
+    const screwAliases = new Set(['screw', 'bolt', 'fastener']);
+    return screwAliases.has(requested) &&
+      [...labels].some((label) => screwAliases.has(label) || config.screwClassNames.includes(label));
+  },
+
   async detect(frame: ImageData): Promise<YoloDetection[]> {
     const config = readConfig();
     if (!config.modelUrl) return [];
