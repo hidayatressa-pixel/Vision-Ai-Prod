@@ -12,7 +12,7 @@ export const EngineeringPinGate: React.FC<EngineeringPinGateProps> = ({
   onSuccess,
   onCancel,
   title = 'Engineering Access',
-  description = 'Engineering settings require authorization.',
+  description = 'Local UI gate only; this PIN is not production authentication.',
 }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -45,7 +45,7 @@ export const EngineeringPinGate: React.FC<EngineeringPinGateProps> = ({
           <LockKeyhole className="h-7 w-7" />
         </div>
         <div className="text-center">
-          <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-amber-400">Authorized personnel</div>
+          <div className="text-[10px] font-mono uppercase tracking-[0.22em] text-amber-400">Local UI gate · not authentication</div>
           <h2 className="mt-2 text-lg font-bold text-white">{title}</h2>
           <p className="mt-1 text-xs leading-relaxed text-slate-400">{description}</p>
         </div>
