@@ -134,6 +134,10 @@ export default function App() {
   const handleUseExampleMaster = () => {
     const example = masters.find((item) => item.id === SEED_PRODUCT_A.id) ||
       masters.find((item) => item.productCode === SEED_PRODUCT_A.productCode) ||
+      masters.find((item) =>
+        item.productCode.toLowerCase().includes('reflector-assy-hl-gjra') ||
+        item.productName.toLowerCase().includes('reflector assy hl gjra')
+      ) ||
       SEED_PRODUCT_A;
     const revision = example.revisions.find((item) => item.id === example.activeRevisionId) || example.revisions[0];
     if (!revision) return;
