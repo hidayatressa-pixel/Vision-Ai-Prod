@@ -188,6 +188,12 @@ Before line use:
 
 This repository intentionally contains no bundled production reference imagery until the approved master asset is committed during commissioning.
 
+## Storage and internal server configuration
+
+Engineering Settings includes a **Storage & Server** screen with a local station option and a draft profile for the future internal company server. The draft stores the station label and API base URL in this browser only; it does not send network requests, test connectivity, or switch the active backend. IndexedDB remains the active persistence layer.
+
+Do not activate a server migration until the company API contract, authentication, authorization, data ownership, conflict handling, retry/offline behavior, backup, and migration/rollback plan have been approved. Saving a server profile does not move or delete local master data or inspection history.
+
 ## Dynamic product master setup
 
 The Master Setup entry screen offers two workflows:
