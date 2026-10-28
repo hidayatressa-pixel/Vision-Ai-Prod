@@ -309,6 +309,18 @@ class DatabaseService {
     }
   }
 
+  /** Export station-local data explicitly for a controlled server migration. */
+  public async exportLocalSnapshot(): Promise<{ masters: MasterProduct[]; inspections: InspectionRecord[] }> {
+    const database = await this.openMasterDb();
+    const masters = await new Promise<MasterProduct[]>((resolve, reject) => {
+      const request = database.transaction(MASTER_STORE, 'readonly').objectStore(MASTER_STORE).getAll();
+      request.onsuccess = () => resolve(request.result as MasterProduct[]);
+      request.onerror = () => reject(request.error || new Error('Unable to export local master data.'));
+    });
+    const inspections = await this.getLocalHistory();
+    return { masters, inspections };
+  }
+
   public async getFilteredInspections(filters: {
     productId?: string;
     judgement?: string;
