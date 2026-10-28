@@ -12,19 +12,21 @@ The application is designed for a fixed camera station where each workpiece is l
 4. **Inspection** — Each of the eight required screw locations is checked for presence, confidence, and position tolerance. Unexpected screw-like objects are also screened.
 5. **Rule Engine** — The configured master remains authoritative. Alignment failures are reported as system errors; part defects produce NG.
 6. **Re-arm** — After a judgement, the station waits for removal or a meaningful replacement/repositioning change before allowing another inspection.
-7. **History** — Inspection results are stored in the shared Supabase cloud database so every station/device can see the same history.
+7. **History** — Inspection results are committed to station-local IndexedDB first. Optional Supabase synchronization is disabled unless explicitly enabled.
 
 ## Production architecture
 
 This repository is the **production/on-premise Vision-AI variant**. It does not require AWS Lambda, Amazon S3, API Gateway, or another AWS runtime for inspection.
 
-The inspection decision runs locally in the browser/device using OpenCV 5-assisted vision processing, the configured master/ROI rules, and the PLC adapter. Master settings remain local to each browser/device; only inspection history is shared through Supabase when configured.
+The inspection decision runs locally in the browser/device using OpenCV 5-assisted vision processing, optional YOLO ONNX supporting evidence, configured master/ROI rules, and the PLC adapter. Master settings and inspection history are stored in local IndexedDB. Supabase is an optional sync adapter, not a runtime requirement. YOLO detections can support a bounded screw ROI only; the deterministic rule engine remains the final judgement authority.
 
 The AWS/OpenCV 5 hackathon implementation is maintained separately in the `Vision-AI-AWS` repository and is intentionally not part of this production runtime.
 
-## Cloud history setup
+## Local-first history and optional cloud sync
 
-Master configurations (including uploaded reference-image data) are persisted in station-local IndexedDB, so they survive page refreshes on the same browser/device. Inspection history is cloud-first when Supabase is configured. If a cloud write fails, the record is queued in local browser storage and retried when history is opened again. The queue is bounded to 5,000 records; monitor browser storage capacity and verify pending records sync before clearing browser data.
+Master configurations (including uploaded reference-image data) and inspection history are persisted in station-local IndexedDB, so the station can run without AWS or Supabase. Existing history in the legacy `localStorage` key is migrated into IndexedDB and the legacy key is removed only after the IndexedDB transaction commits. Do not clear browser data before confirming important records have been exported/backed up.
+
+Supabase sync is opt-in. Configure `VITE_ENABLE_SUPABASE_SYNC=true` together with the URL and publishable key below to enable it. Without that explicit flag, no Supabase requests are made.
 
 The application uses the Supabase REST Data API with the browser-safe **publishable key**. Supabase recommends exposing only the required tables/functions and protecting them with Row Level Security (RLS). urlSupabase JavaScript installation docshttps://supabase.com/docs/reference/javascript/installing
 
@@ -89,12 +91,30 @@ grant select, insert, update, delete on public.inspection_history to anon, authe
 
 For the current station version, this deliberately permits the publishable client to read/write the history table because the application does not yet have Supabase Auth. **Use this only on the controlled station network.** Before exposing the app publicly, add authentication and tighten the RLS policies.
 
-Create `.env.local` in the project root:
+Create `.env.local` in the project root only if cloud sync is approved:
 
 ```env
+VITE_ENABLE_SUPABASE_SYNC=true
 VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=YOUR_SUPABASE_PUBLISHABLE_KEY
 ```
+
+## Optional YOLO model
+
+YOLO runs in the browser through ONNX Runtime Web only when a compatible YOLOv8-style detection ONNX model is supplied. Model weights are intentionally not committed. Configure the model path and class labels in `.env.local`:
+
+```env
+VITE_YOLO_MODEL_URL=/models/inspection-yolo.onnx
+VITE_YOLO_INPUT_SIZE=640
+VITE_YOLO_CONFIDENCE=0.35
+VITE_YOLO_IOU=0.45
+VITE_YOLO_CLASS_NAMES=screw,fastener,bolt
+VITE_YOLO_SCREW_CLASS_NAMES=screw,fastener,bolt
+```
+
+Place the approved model at the configured public path. The parser currently expects a batch-1 YOLOv8 detection output tensor. Verify output shape, class order, confidence calibration, and representative production images before trial use. If no model URL is configured or inference fails, the existing OpenCV/RVI path continues; YOLO is never the final OK/NG/INVALID authority.
+
+The future internal-server adapter is currently a disabled contract stub. It sends no requests until the company endpoint, authentication, data contract, and retry/conflict behavior are approved.
 
 Do **not** put a Supabase secret/service-role key in the browser or commit it to GitHub. The browser should use only the publishable key with RLS enabled. urlSupabase API keys guidancehttps://supabase.com/docs/guides/getting-started/api-keys
 
