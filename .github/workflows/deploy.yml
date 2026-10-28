@@ -36,6 +36,9 @@ jobs:
       - name: Adversarial recognizer audit
         run: npm run audit:recognizer
 
+      - name: Vision architecture contract audit
+        run: npm run audit:vision-architecture
+
       - name: Production build
         run: npm run build
 
