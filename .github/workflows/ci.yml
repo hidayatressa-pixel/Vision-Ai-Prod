@@ -33,6 +33,9 @@ jobs:
       - name: Local storage API syntax check
         run: npm run check:server
 
+      - name: Local storage API integration test
+        run: npm run test:server
+
       - name: Type check
         run: npm run lint
 
