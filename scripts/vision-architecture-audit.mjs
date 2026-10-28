@@ -48,6 +48,13 @@ check(
 );
 
 check(
+  'YOLO position tolerance scales from master to camera resolution',
+  yolo.includes('scaledMaxPositionOffsetPx') &&
+    pipeline.includes('revision.masterWidth,\n                revision.masterHeight'),
+  'Pixel and millimeter offsets must remain calibrated when camera resolution differs from the master image.'
+);
+
+check(
   'Ambiguous required ROI evidence is not OK',
   rules.includes('hasUncertainRequiredRoi') &&
     rules.includes("judgement: 'INVALID'"),
@@ -116,6 +123,6 @@ check(
   'The architecture audit must be runnable in CI.'
 );
 
-assert.equal(checks.length, 12);
+assert.equal(checks.length, 13);
 if (process.exitCode) process.exit(process.exitCode);
 console.log(`Vision architecture contract audit passed: ${checks.length} checks.`);
