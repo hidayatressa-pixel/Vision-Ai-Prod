@@ -205,20 +205,16 @@ export function applyYoloSupportingEvidence(
   const byId = new Map(rois.map((roi) => [roi.id, roi]));
 
   return results.map((result) => {
-    if (result.isPresent || result.evidence === 'PRESENT') return result;
     const roi = byId.get(result.roiId);
     if (!roi || !roi.isRequired) return result;
 
-    // Every ROI can use YOLO, not only screws. The configured class name must
-    // match a class label emitted by the loaded model; screw aliases are kept
-    // for backward compatibility with existing masters.
     const expectedClass = (roi.objectClass || roi.objectType).trim().toLowerCase();
     const allowedLabels = new Set([expectedClass]);
     if (roi.objectType === 'screw' || defaultScrewLabels.has(expectedClass)) {
       defaultScrewLabels.forEach((label) => allowedLabels.add(label));
     }
     const radiusPx = Math.max(roi.toleranceRadius * frameScale, tolerance.maxPositionOffsetPx);
-    const candidate = detections
+    const candidates = detections
       .filter((item) => allowedLabels.has(item.label.toLowerCase()) && item.confidence >= (roi.minConfidence || tolerance.minScrewConfidence))
       .map((item) => ({
         item,
@@ -228,15 +224,53 @@ export function applyYoloSupportingEvidence(
         ),
       }))
       .filter((item) => item.distance <= radiusPx)
-      .sort((a, b) => b.item.confidence - a.item.confidence)[0];
-    if (!candidate) return result;
+      .sort((a, b) => b.item.confidence - a.item.confidence);
+    const candidate = candidates[0];
+
+    // Non-screw classes need class-aware confirmation. The classical circular
+    // detector alone cannot establish that a clip/connector/custom part exists.
+    if (roi.objectType !== 'screw') {
+      if (!candidate) {
+        return {
+          ...result,
+          isPresent: false,
+          evidence: 'UNCERTAIN',
+          status: 'WARNING',
+          confidence: 0,
+          failureReason: `YOLO did not confirm class "${expectedClass}" in ${roi.name}`,
+        };
+      }
+      const withinTolerance = candidate.distance <= radiusPx;
+      return {
+        ...result,
+        actualDetectedPosition: { x: candidate.item.x, y: candidate.item.y },
+        positionOffsetPx: Math.round(candidate.distance * 10) / 10,
+        positionOffsetMm: Math.round((candidate.distance / Math.max(1, tolerance.maxPositionOffsetPx)) * tolerance.maxPositionOffsetMm * 100) / 100,
+        isWithinTolerance: withinTolerance,
+        confidence: Math.round(candidate.item.confidence * 100) / 100,
+        isPresent: true,
+        evidence: 'PRESENT',
+        status: withinTolerance ? 'PASS' : 'FAIL',
+        failureReason: withinTolerance ? undefined : `${roi.name} Position Out of Tolerance`,
+      };
+    }
+
+    if (result.isPresent || result.evidence === 'PRESENT') return result;
+
+    // Screw ROIs keep the classical RVI decision unless YOLO can recover a
+    // required ROI that classical vision marked absent/uncertain.
+    // Every ROI can use YOLO, not only screws. The configured class name must
+    // match a class label emitted by the loaded model; screw aliases are kept
+    // for backward compatibility with existing masters.
+    const screwCandidate = candidate;
+    if (!screwCandidate) return result;
 
     return {
       ...result,
-      actualDetectedPosition: { x: candidate.item.x, y: candidate.item.y },
-      positionOffsetPx: Math.round(candidate.distance * 10) / 10,
+      actualDetectedPosition: { x: screwCandidate.item.x, y: screwCandidate.item.y },
+      positionOffsetPx: Math.round(screwCandidate.distance * 10) / 10,
       isWithinTolerance: true,
-      confidence: Math.round(candidate.item.confidence * 100) / 100,
+      confidence: Math.round(screwCandidate.item.confidence * 100) / 100,
       isPresent: true,
       evidence: 'PRESENT',
       status: 'PASS',
