@@ -6,7 +6,7 @@ import { ScanLine, ClipboardCheck, Volume2, VolumeX, Wifi, RefreshCw, Settings }
 import { MasterProduct, MasterRevision } from '../types/master';
 import { getRuntimeIdentity } from '../services/runtimeConfig';
 
-export type ActiveTab = 'INSPECTION' | 'MASTERS' | 'CAMERA_SETUP' | 'PLC_SETUP' | 'HISTORY' | 'DIAGNOSTICS' | 'SETTINGS';
+export type ActiveTab = 'INSPECTION' | 'MASTERS' | 'CAMERA_SETUP' | 'PLC_SETUP' | 'HISTORY' | 'DIAGNOSTICS' | 'STORAGE_SETUP' | 'SETTINGS';
 export type UserRole = 'OPERATOR' | 'ENGINEER';
 
 interface NavbarProps {
