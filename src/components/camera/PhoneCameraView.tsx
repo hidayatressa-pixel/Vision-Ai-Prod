@@ -11,36 +11,46 @@ export const PhoneCameraView: React.FC = () => {
 
   useEffect(() => {
     let cancelled = false;
+    let cameraRequestTimedOut = false;
+    let cameraTimeoutId: number | undefined;
     const controllerId = new URLSearchParams(window.location.search).get('session');
 
     if (!controllerId) {
       setStatus('error');
-      setMessage('Missing laptop pairing session.');
+      setMessage('Missing laptop pairing session. Return to the laptop and scan a newly generated QR code.');
       return;
     }
 
     const start = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) {
-          throw new Error('Camera API is not available in this browser.');
+          throw new Error('Camera API is not available. Open this page over HTTPS or localhost in a supported browser.');
         }
 
-        // Start with the least restrictive camera request. Some Android browsers
-        // can leave a high-resolution/framerate constraint request pending instead
-        // of rejecting it. We can still use the native camera resolution for Vision.
+        // Ask for the rear camera without strict resolution constraints. This is
+        // more reliable across Android devices; Vision reads the actual frame size.
         const streamPromise = navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
+          video: { facingMode: { ideal: 'environment' } },
           audio: false,
+        }).then((stream) => {
+          // getUserMedia cannot be cancelled. If it resolves after timeout/unmount,
+          // stop its tracks immediately so the phone camera is not left running.
+          if (cameraRequestTimedOut || cancelled) {
+            stream.getTracks().forEach((track) => track.stop());
+          }
+          return stream;
         });
 
         const timeoutPromise = new Promise<never>((_, reject) => {
-          window.setTimeout(
-            () => reject(new Error('Camera request timed out. Check browser camera permission and try again.')),
-            15000
-          );
+          cameraTimeoutId = window.setTimeout(() => {
+            cameraRequestTimedOut = true;
+            reject(new Error('Camera request timed out after 15 seconds. Check site permissions and reload the page.'));
+          }, 15000);
         });
 
         const stream = await Promise.race([streamPromise, timeoutPromise]);
+        if (cameraTimeoutId !== undefined) window.clearTimeout(cameraTimeoutId);
+        cameraTimeoutId = undefined;
 
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
@@ -53,18 +63,23 @@ export const PhoneCameraView: React.FC = () => {
           await videoRef.current.play().catch(() => undefined);
         }
 
+        setMessage('Camera permission granted. Establishing secure media connection to laptop...');
         await sessionRef.current.waitForController(controllerId, stream);
+
         if (!cancelled) {
           setStatus('connected');
-          setMessage('Camera is streaming to Vision AI laptop.');
+          setMessage('WebRTC media connection established. Confirm that the laptop preview is live before starting inspection.');
         }
       } catch (error) {
         console.error('Phone camera connection error:', error);
+        streamRef.current?.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+
         if (!cancelled) {
           setStatus('error');
           const errorName = error instanceof DOMException ? error.name : '';
           if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
-            setMessage('Camera permission is blocked. Allow camera access for this site, then reload this page.');
+            setMessage('Camera permission is blocked or this page is not in a secure context. Allow camera access and open the HTTPS link again.');
           } else if (errorName === 'NotFoundError') {
             setMessage('No camera was found on this phone.');
           } else if (errorName === 'NotReadableError' || errorName === 'AbortError') {
@@ -73,13 +88,16 @@ export const PhoneCameraView: React.FC = () => {
             setMessage(error instanceof Error ? error.message : 'Unable to start phone camera.');
           }
         }
+      } finally {
+        if (cameraTimeoutId !== undefined) window.clearTimeout(cameraTimeoutId);
       }
     };
 
-    start();
+    void start();
 
     return () => {
       cancelled = true;
+      if (cameraTimeoutId !== undefined) window.clearTimeout(cameraTimeoutId);
       sessionRef.current.stop();
       streamRef.current?.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
@@ -104,7 +122,7 @@ export const PhoneCameraView: React.FC = () => {
         <div className={`rounded-2xl border p-4 flex items-center gap-3 ${status === 'connected' ? 'border-emerald-500/40 bg-emerald-500/5' : status === 'error' ? 'border-red-500/40 bg-red-500/5' : 'border-cyan-500/30 bg-cyan-500/5'}`}>
           {status === 'connected' ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : status === 'error' ? <CircleAlert className="w-5 h-5 text-red-400" /> : <Camera className="w-5 h-5 text-cyan-400 animate-pulse" />}
           <div>
-            <div className="font-bold text-sm">{status === 'connected' ? 'CONNECTED' : status === 'error' ? 'CONNECTION ERROR' : 'CONNECTING...'}</div>
+            <div className="font-bold text-sm">{status === 'connected' ? 'MEDIA CONNECTED' : status === 'error' ? 'CONNECTION ERROR' : 'CONNECTING...'}</div>
             <div className="text-xs text-slate-400 mt-1">{message}</div>
           </div>
         </div>
