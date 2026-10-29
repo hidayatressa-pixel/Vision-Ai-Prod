@@ -27,6 +27,7 @@ import { PresenceDetector } from '../vision/presenceDetector';
 import { roiInspector } from '../vision/roiInspector';
 import { ruleEngine } from '../vision/ruleEngine';
 import { preprocessInspectionFrame } from '../vision/opencvEngine';
+import { applyYoloSupportingEvidence, yoloEngine } from '../vision/yoloEngine';
 
 export interface UseInspectionPipelineProps {
   activeMaster: MasterProduct | null;
@@ -292,6 +293,44 @@ export function useInspectionPipeline({
           );
           roiResults = inspection.roiResults;
           extraObjects = inspection.extraObjects;
+
+          // YOLO class evidence is mandatory for non-screw component classes.
+          // The deterministic rule engine still owns final OK/NG/INVALID.
+          const markNonScrewRoisUnverified = () => {
+            roiResults = roiResults.map((result) => {
+              const configuredRoi = revision.inspectionROIs.find((roi) => roi.id === result.roiId);
+              if (!configuredRoi?.isRequired || configuredRoi.objectType === 'screw') return result;
+              return {
+                ...result,
+                isPresent: false,
+                evidence: 'UNCERTAIN' as const,
+                status: 'WARNING' as const,
+                confidence: 0,
+                failureReason: 'A compatible YOLO model is required to verify this component class.',
+              };
+            });
+          };
+
+          if (yoloEngine.isConfigured()) {
+            try {
+              const yoloDetections = await yoloEngine.detect(candidateFrame);
+              roiResults = applyYoloSupportingEvidence(
+                roiResults,
+                yoloDetections,
+                revision.inspectionROIs,
+                revision.tolerance,
+                candidateFrame.width,
+                candidateFrame.height,
+                revision.masterWidth,
+                revision.masterHeight
+              );
+            } catch (yoloError) {
+              console.warn('[VisionPipeline] YOLO inference failed:', yoloError);
+              markNonScrewRoisUnverified();
+            }
+          } else {
+            markNonScrewRoisUnverified();
+          }
           roiMs = performance.now() - roiStart;
         }
 

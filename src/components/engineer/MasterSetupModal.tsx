@@ -10,9 +10,12 @@ import {
   Crosshair,
   Images,
   Upload,
+  Plus,
+  Trash2,
 } from 'lucide-react';
-import { InspectionROI, MasterProduct, MasterRevision } from '../../types/master';
+import { InspectionROI, MasterProduct, MasterRevision, ReferenceImage } from '../../types/master';
 import { dbService } from '../../services/db';
+import { yoloEngine } from '../../vision/yoloEngine';
 
 interface MasterSetupModalProps {
   master: MasterProduct;
@@ -273,6 +276,31 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
 
   const selectedReference = editedRevision.referenceImages?.find((reference) => reference.id === selectedReferenceId);
 
+  const handleAddReferenceImage = (file: File | null) => {
+    if (!file) return;
+    if (selectedItemType !== 'ROI' || !selectedId) {
+      setSaveError('Select an ROI before adding its golden reference image.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const roi = editedRevision.inspectionROIs.find((item) => item.id === selectedId);
+      if (!roi || !dataUrl) return;
+      const reference: ReferenceImage = {
+        id: `ref-${Date.now()}`,
+        label: `${roi.name} reference`,
+        roiId: roi.id,
+        imageUrl: dataUrl,
+        description: `Golden reference for ${roi.name}`,
+      };
+      setEditedRevision((prev) => ({ ...prev, referenceImages: [...(prev.referenceImages || []), reference] }));
+      setSelectedReferenceId(reference.id);
+      setSaveError(null);
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleReplaceReferenceImage = (referenceId: string, file: File | null) => {
     if (!file) return;
     const reader = new FileReader();
@@ -294,21 +322,18 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
     const tolerance = editedRevision.tolerance;
     const errors: string[] = [];
     if (editedRevision.anchors.length !== 4) errors.push('Exactly 4 alignment anchors are required.');
-    if (editedRevision.inspectionROIs.length !== 8) errors.push('Exactly 8 screw inspection ROIs are required.');
+    if (editedRevision.inspectionROIs.length < 1) errors.push('At least one inspection ROI is required.');
     if (!editedRevision.masterImageUrl || !editedRevision.masterImageUrl.trim()) errors.push('A master image is required.');
     if (editedRevision.masterWidth <= 0 || editedRevision.masterHeight <= 0) errors.push('Master dimensions are invalid. Re-upload the approved master image so its native resolution can be captured.');
     const references = editedRevision.referenceImages || [];
-    if (references.length !== 8) {
-      errors.push(`Exactly 8 master reference images are required (${references.length}/8 configured).`);
-    }
-    if (references.some((reference) => !reference.imageUrl || !reference.imageUrl.trim())) {
-      errors.push('All 8 master reference images must contain a valid image.');
+    if (references.some((reference) => reference.imageUrl && !reference.imageUrl.trim())) {
+      errors.push('Reference images must contain valid image data when configured.');
     }
     if (new Set(references.map((reference) => reference.id)).size !== references.length) {
       errors.push('Master reference IDs must be unique.');
     }
-    if (editedRevision.expectedObjectCount !== 8 || editedRevision.expectedObjectCount !== editedRevision.inspectionROIs.length) {
-      errors.push('Expected object count must match the number of inspection ROIs.');
+    if (editedRevision.expectedObjectCount !== editedRevision.inspectionROIs.filter((roi) => roi.isRequired).length) {
+      errors.push('Expected object count must match the number of required inspection ROIs.');
     }
     if (tolerance.maxPositionOffsetPx <= 0 || tolerance.maxPositionOffsetMm <= 0) {
       errors.push('Position tolerances must be greater than zero.');
@@ -349,7 +374,7 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                 Master Calibration & ROI Editor · {master.productName} ({editedRevision.revisionCode})
               </h2>
               <p className="text-xs text-slate-400 font-mono">
-                Position anchors, configure expected screws, and adjust allowable tolerances.
+                Position anchors, configure required component classes, and adjust allowable tolerances.
               </p>
             </div>
           </div>
@@ -416,12 +441,13 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                   </div>
                   <p className="text-[10px] text-slate-500 font-mono mt-0.5">Close-up golden references shown side-by-side for judgement verification.</p>
                 </div>
-                {selectedReference && (
-                  <div className="hidden sm:block text-right text-[10px] font-mono">
-                    <div className="text-cyan-300">Selected: {selectedReference.label}</div>
-                    <div className="text-slate-500">Linked ROI: {selectedReference.roiId || '—'}</div>
-                  </div>
-                )}
+                <div className="flex items-center gap-2">
+                  {selectedReference && <div className="hidden sm:block text-right text-[10px] font-mono"><div className="text-cyan-300">Selected: {selectedReference.label}</div><div className="text-slate-500">Linked ROI: {selectedReference.roiId || '—'}</div></div>}
+                  <label className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20">
+                    <Plus className="h-3 w-3" /> Add reference
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => { handleAddReferenceImage(e.target.files?.[0] || null); e.currentTarget.value = ''; }} />
+                  </label>
+                </div>
               </div>
 
               <div className="flex gap-3 overflow-x-auto pb-1">
@@ -488,10 +514,10 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                 <span className="inline-block h-3 w-3 rounded-full border-2 border-yellow-400 border-dashed"></span>
                 YELLOW = absolute tolerance boundary
               </div>
-              <div className="text-[10px] font-mono text-cyan-300">Drag any blue point to match the actual screw.</div>
+              <div className="text-[10px] font-mono text-cyan-300">Drag any blue ROI point to the actual component location.</div>
             </div>
             <div className="text-xs font-mono text-slate-400 flex items-center justify-between">
-              <span>Master image = layout/alignment reference. Close-up references = visual evidence for each inspection point.</span>
+              <span>Master image = layout/alignment reference. Close-up references = optional visual evidence linked to each inspection point.</span>
               <span className="text-cyan-400">Master Res: {editedRevision.masterWidth}x{editedRevision.masterHeight}</span>
             </div>
           </div>
@@ -520,11 +546,33 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
 
             {activeTab === 'VISUAL' && (
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono uppercase tracking-wider text-slate-400">
-                    Inspection Screws
-                  </span>
-                  <span className="text-[10px] font-mono text-cyan-300">8 required</span>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <span className="text-xs font-mono uppercase tracking-wider text-slate-400">Inspection Components</span>
+                    <div className="mt-1 text-[10px] font-mono text-cyan-300">{editedRevision.inspectionROIs.filter((roi) => roi.isRequired).length} required</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] text-slate-400">Focus zone
+                      <select value={editedRevision.focusZone || 'A'} onChange={(e) => {
+                        const zone = e.target.value as 'A' | 'B' | 'C';
+                        const detectionZone = zone === 'A' ? { x: 0.05, y: 0.1, width: 0.3, height: 0.8 } : zone === 'B' ? { x: 0.35, y: 0.1, width: 0.3, height: 0.8 } : { x: 0.65, y: 0.1, width: 0.3, height: 0.8 };
+                        setEditedRevision((prev) => ({ ...prev, focusZone: zone, detectionZone, inspectionROIs: prev.inspectionROIs.map((roi) => ({ ...roi, focusZone: zone })) }));
+                      }} className="ml-1 rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 text-[10px] text-cyan-300">
+                        <option value="A">A · Left</option><option value="B">B · Center</option><option value="C">C · Right</option>
+                      </select>
+                    </label>
+                  <button type="button" onClick={() => {
+                    const index = editedRevision.inspectionROIs.length + 1;
+                    const roi: InspectionROI = {
+                      id: `roi-${Date.now()}`, name: `Component #${index}`, objectType: 'component',
+                      objectClass: 'component', focusZone: editedRevision.focusZone || 'A',
+                      x: 0.5, y: 0.5, radius: 0.04, toleranceRadius: 0.035,
+                      minConfidence: 0.65, isRequired: true,
+                    };
+                    setEditedRevision((prev) => ({ ...prev, inspectionROIs: [...prev.inspectionROIs, roi], expectedObjectCount: prev.inspectionROIs.filter((item) => item.isRequired).length + 1 }));
+                    setSelectedId(roi.id); setSelectedItemType('ROI');
+                  }} className="inline-flex items-center gap-1 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1.5 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500/20"><Plus className="h-3 w-3" /> Add ROI</button>
+                  </div>
                 </div>
 
                 {selectedReference && (
@@ -565,23 +613,36 @@ export const MasterSetupModal: React.FC<MasterSetupModalProps> = ({
                             : 'bg-slate-950/80 border-slate-800 hover:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <input
-                            type="text"
-                            value={roi.name}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setEditedRevision((prev) => ({
-                                ...prev,
-                                inspectionROIs: prev.inspectionROIs.map((r) =>
-                                  r.id === roi.id ? { ...r, name: val } : r
-                                ),
-                              }));
-                            }}
-                            className="bg-transparent font-bold text-white font-mono focus:outline-none focus:border-b border-cyan-400"
-                          />
-
+                        <div className="mb-2 flex items-center gap-2">
+                          <input type="text" value={roi.name} onChange={(e) => {
+                            const val = e.target.value;
+                            setEditedRevision((prev) => ({ ...prev, inspectionROIs: prev.inspectionROIs.map((r) => r.id === roi.id ? { ...r, name: val } : r) }));
+                          }} className="min-w-0 flex-1 bg-transparent font-bold text-white font-mono focus:outline-none focus:border-b border-cyan-400" aria-label="ROI name" />
+                          <button type="button" title="Remove ROI" onClick={(e) => {
+                            e.stopPropagation();
+                            setEditedRevision((prev) => {
+                              const inspectionROIs = prev.inspectionROIs.filter((r) => r.id !== roi.id);
+                              return { ...prev, inspectionROIs, expectedObjectCount: inspectionROIs.filter((item) => item.isRequired).length, referenceImages: (prev.referenceImages || []).filter((reference) => reference.roiId !== roi.id) };
+                            });
+                            if (selectedId === roi.id) setSelectedId('');
+                          }} className="rounded-md p-1 text-slate-500 hover:bg-red-950 hover:text-red-300"><Trash2 className="h-3.5 w-3.5" /></button>
                         </div>
+                        <label className="mb-2 block text-[10px] text-slate-500">YOLO class / component type</label>
+                        <input type="text" value={roi.objectClass || roi.objectType} onChange={(e) => {
+                          const objectClass = e.target.value;
+                          const normalized = objectClass.trim().toLowerCase();
+                          const objectType: 'screw' | 'connector' | 'clip' | 'label' | 'component' = ['screw', 'bolt', 'fastener'].includes(normalized) ? 'screw' : normalized === 'connector' || normalized === 'clip' || normalized === 'label' ? normalized : 'component';
+                          setEditedRevision((prev) => ({ ...prev, inspectionROIs: prev.inspectionROIs.map((r) => r.id === roi.id ? { ...r, objectClass, objectType } : r) }));
+                        }} className="mb-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-[11px] text-cyan-200 outline-none focus:border-cyan-400" />
+                        <p className={`mb-2 text-[10px] ${!yoloEngine.isConfigured() || !yoloEngine.supportsClass(roi.objectClass || roi.objectType) ? 'text-amber-300' : 'text-emerald-300'}`}>
+                          {!yoloEngine.isConfigured()
+                            ? roi.objectType === 'screw'
+                              ? 'YOLO is optional for screw ROIs; OpenCV/RVI remains available. Custom classes need a compatible YOLO model.'
+                              : 'YOLO model is not configured; this custom class cannot be verified.'
+                            : yoloEngine.supportsClass(roi.objectClass || roi.objectType)
+                              ? 'Class label is listed in the configured YOLO model.'
+                              : 'Class is not listed in the configured model labels. Update the model/label map before using this ROI.'}
+                        </p>
 
                         <div className="grid grid-cols-2 gap-2 text-[11px] font-mono text-slate-400">
                           <div>Pos X: {(roi.x * 100).toFixed(1)}%</div>

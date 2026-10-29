@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "lint": "tsc --noEmit",
-    "audit:recognizer": "node scripts/adversarial-recognizer-audit.mjs"
+    "audit:recognizer": "node scripts/adversarial-recognizer-audit.mjs",
+    "audit:vision-architecture": "node scripts/vision-architecture-audit.mjs",
+    "server:local": "node server/local-storage-server.mjs",
+    "check:server": "node --check server/local-storage-server.mjs",
+    "test:server": "node scripts/test-local-storage-api.mjs"
   },
   "dependencies": {
     "@opencvjs/web": "5.0.0-release.2",
@@ -20,7 +24,8 @@
     "react-dom": "^19.0.1",
     "vite": "^8.3.0",
     "peerjs": "^1.5.5",
-    "qrcode": "^1.5.4"
+    "qrcode": "^1.5.4",
+    "onnxruntime-web": "^1.22.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

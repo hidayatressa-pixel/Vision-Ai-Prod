@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - Vision-AI-Prod
+      - refactor/local-first-perception
   pull_request:
     branches:
       - main
       - Vision-AI-Prod
+      - refactor/local-first-perception
 
 permissions:
   contents: read
@@ -28,11 +30,20 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Local storage API syntax check
+        run: npm run check:server
+
+      - name: Local storage API integration test
+        run: npm run test:server
+
       - name: Type check
         run: npm run lint
 
       - name: Adversarial recognizer audit
         run: npm run audit:recognizer
+
+      - name: Vision architecture contract audit
+        run: npm run audit:vision-architecture
 
       - name: Production build
         run: npm run build

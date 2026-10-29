@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Boxes, Camera, Cable, Gauge, LockKeyhole, X } from 'lucide-react';
+import { Boxes, Camera, Cable, Database, Gauge, X } from 'lucide-react';
 import { ActiveTab } from '../Navbar';
 import { EngineeringPinGate } from '../auth/EngineeringPinGate';
 
@@ -27,6 +27,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ onNavigate, onClose 
     { label: 'Camera', description: 'Camera device and calibration.', icon: <Camera />, tab: 'CAMERA_SETUP' },
     { label: 'PLC', description: 'Trigger, handshake and PLC configuration.', icon: <Cable />, tab: 'PLC_SETUP' },
     { label: 'Diagnostics', description: 'Technical runtime metrics and troubleshooting.', icon: <Gauge />, tab: 'DIAGNOSTICS' },
+    { label: 'Storage & Server', description: 'Local IndexedDB settings and internal server connection profile.', icon: <Database />, tab: 'STORAGE_SETUP' },
   ];
 
   return (
